@@ -343,186 +343,223 @@ export async function fetchRouteOverview(routeCode, direction = 'G') {
 // -------------------------------------------------------------
 
 export async function identifyLocation(lat, lng) {
-  // Önce yerel Express backend'i dene
+  // 1. Önce yerel Express backend'i dene
   try {
     const res = await fetchJson(`/cbs/identify?lat=${lat}&lng=${lng}`);
-    return res.data || null;
-  } catch (backendErr) {
-    // Backend yoksa (GitHub Pages ortamı), doğrudan canlı ArcGIS JSONP ile çek!
-    console.log('[CBS Client] GitHub Pages modu aktif: Canlı ArcGIS FeatureServer sorgulanıyor...');
-
-    const pointGeom = JSON.stringify({ x: Number(lng), y: Number(lat), spatialReference: { wkid: 4326 } });
-    const buffer = 0.0004;
-    const envGeom = JSON.stringify({
-      xmin: Number(lng) - buffer,
-      ymin: Number(lat) - buffer,
-      xmax: Number(lng) + buffer,
-      ymax: Number(lat) + buffer,
-      spatialReference: { wkid: 4326 }
-    });
-
-    const [yapiRes, kadastroRes, mahalleRes, numaratajRes] = await Promise.all([
-      // Layer 8: YAPI
-      fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/8/query`, {
-        geometry: pointGeom,
-        geometryType: 'esriGeometryPoint',
-        inSR: '4326',
-        spatialRel: 'esriSpatialRelIntersects',
-        outFields: '*',
-        returnGeometry: 'true'
-      }).catch(() => ({ features: [] })),
-
-      // Layer 3: KADASTRO
-      fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/3/query`, {
-        geometry: pointGeom,
-        geometryType: 'esriGeometryPoint',
-        inSR: '4326',
-        spatialRel: 'esriSpatialRelIntersects',
-        outFields: '*',
-        returnGeometry: 'true'
-      }).catch(() => ({ features: [] })),
-
-      // Layer 5: MAHALLE
-      fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/5/query`, {
-        geometry: pointGeom,
-        geometryType: 'esriGeometryPoint',
-        inSR: '4326',
-        spatialRel: 'esriSpatialRelIntersects',
-        outFields: 'objectid,ad,muhtar_adi_soyadi,muhtar_cep_telefonu,yapi_sayisi,kapi_sayisi,Shape__Area',
-        returnGeometry: 'false'
-      }).catch(() => ({ features: [] })),
-
-      // Layer 7: NUMARATAJ
-      fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/7/query`, {
-        geometry: envGeom,
-        geometryType: 'esriGeometryEnvelope',
-        inSR: '4326',
-        spatialRel: 'esriSpatialRelIntersects',
-        outFields: '*',
-        returnGeometry: 'true',
-        resultRecordCount: 5
-      }).catch(() => ({ features: [] }))
-    ]);
-
-    // 1. Yapı
-    let yapi = null;
-    if (yapiRes.features && yapiRes.features.length > 0) {
-      const f = yapiRes.features[0];
-      const attr = f.attributes || {};
-      const geom = f.geometry || {};
-      let rings = [];
-      if (geom.rings && Array.isArray(geom.rings)) {
-        rings = geom.rings.map((ring) => ring.map((pt) => [pt[1], pt[0]]));
-      }
-      yapi = {
-        objectid: attr.objectid,
-        ad: attr.ad || `Bina (Ada: ${attr.adano || '-'} / Parsel: ${attr.parselno || '-'})`,
-        mahalle: (attr.mahalle_adi || '').trim(),
-        adaNo: attr.adano || '-',
-        parselNo: attr.parselno || '-',
-        paftaAdi: attr.paftaadi || '-',
-        zeminUstuKat: attr.zeminustukatsayisi !== null && attr.zeminustukatsayisi !== undefined ? Number(attr.zeminustukatsayisi) : '-',
-        zeminAltiKat: attr.zeminaltikatsayisi !== null && attr.zeminaltikatsayisi !== undefined ? Number(attr.zeminaltikatsayisi) : '-',
-        meskenSayisi: attr.toplam_mesken || 0,
-        isyeriSayisi: attr.toplam_isyeri || 0,
-        yapiSinifi: attr.yapi_sinifi || '-',
-        asansor: attr.asansor || (attr.asansor_sayisi ? 'Var' : '-'),
-        otopark: attr.otopark || '-',
-        disCephe: attr.dis_cephe_kaplama || '-',
-        yapimYili: attr.yapim_yili || '-',
-        tabanAlaniM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
-        geometryRings: rings,
-        photos: []
-      };
+    if (res && res.data && (res.data.yapi || res.data.kadastro || res.data.mahalle || res.data.numarataj)) {
+      return res.data;
     }
+  } catch {
+    // Backend ulaşılamadıysa doğrudan tarayıcıdan canlı JSONP moduna geç
+  }
 
-    // 2. Kadastro
-    let kadastro = null;
-    if (kadastroRes.features && kadastroRes.features.length > 0) {
-      const f = kadastroRes.features[0];
-      const attr = f.attributes || {};
-      const geom = f.geometry || {};
-      let rings = [];
-      if (geom.rings && Array.isArray(geom.rings)) {
-        rings = geom.rings.map((ring) => ring.map((pt) => [pt[1], pt[0]]));
-      }
-      kadastro = {
-        objectid: attr.objectid,
-        ada: attr.ada || '-',
-        parsel: attr.parsel || '-',
-        adaParsel: attr.ada_parsel || (attr.ada && attr.parsel ? `${attr.ada}/${attr.parsel}` : (attr.ada || attr.parsel || '-')),
-        mahalle: (attr.mahalleadi || attr.mahalle || '').trim(),
-        alanM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
-        geometryRings: rings
-      };
+  // 2. Vercel backend'i belediye firewall'ı nedeniyle engelliyse doğrudan tarayıcıdan (TR IP) canlı ArcGIS FeatureServer JSONP sorgula!
+  const pointGeom = JSON.stringify({ x: Number(lng), y: Number(lat), spatialReference: { wkid: 4326 } });
+  const buffer = 0.0004;
+  const envGeom = JSON.stringify({
+    xmin: Number(lng) - buffer,
+    ymin: Number(lat) - buffer,
+    xmax: Number(lng) + buffer,
+    ymax: Number(lat) + buffer,
+    spatialReference: { wkid: 4326 }
+  });
+
+  const [yapiRes, kadastroRes, mahalleRes, numaratajRes, parkRes] = await Promise.all([
+    // Layer 8: YAPI
+    fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/8/query`, {
+      geometry: pointGeom,
+      geometryType: 'esriGeometryPoint',
+      inSR: '4326',
+      spatialRel: 'esriSpatialRelIntersects',
+      outFields: '*',
+      returnGeometry: 'true'
+    }).catch(() => ({ features: [] })),
+
+    // Layer 3: KADASTRO
+    fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/3/query`, {
+      geometry: pointGeom,
+      geometryType: 'esriGeometryPoint',
+      inSR: '4326',
+      spatialRel: 'esriSpatialRelIntersects',
+      outFields: '*',
+      returnGeometry: 'true'
+    }).catch(() => ({ features: [] })),
+
+    // Layer 5: MAHALLE
+    fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/5/query`, {
+      geometry: pointGeom,
+      geometryType: 'esriGeometryPoint',
+      inSR: '4326',
+      spatialRel: 'esriSpatialRelIntersects',
+      outFields: '*',
+      returnGeometry: 'false'
+    }).catch(() => ({ features: [] })),
+
+    // Layer 7: NUMARATAJ
+    fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/7/query`, {
+      geometry: envGeom,
+      geometryType: 'esriGeometryEnvelope',
+      inSR: '4326',
+      spatialRel: 'esriSpatialRelIntersects',
+      outFields: '*',
+      returnGeometry: 'true',
+      resultRecordCount: 5
+    }).catch(() => ({ features: [] })),
+
+    // Layer 2: YEŞİL ALAN
+    fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/2/query`, {
+      geometry: pointGeom,
+      geometryType: 'esriGeometryPoint',
+      inSR: '4326',
+      spatialRel: 'esriSpatialRelIntersects',
+      outFields: '*',
+      returnGeometry: 'false'
+    }).catch(() => ({ features: [] }))
+  ]);
+
+  // 1. Yapı (Bina)
+  let yapi = null;
+  if (yapiRes.features && yapiRes.features.length > 0) {
+    const f = yapiRes.features[0];
+    const attr = f.attributes || {};
+    const geom = f.geometry || {};
+    let rings = [];
+    if (geom.rings && Array.isArray(geom.rings)) {
+      rings = geom.rings.map((ring) => ring.map((pt) => [pt[1], pt[0]]));
     }
+    const bName = (attr.ad || attr.siteveyakooperatifadi || (attr.adano && attr.parselno ? `Bina (Ada: ${attr.adano} / Parsel: ${attr.parselno})` : 'Bina')).trim();
 
-    // 3. Mahalle
-    let mahalle = null;
-    if (mahalleRes.features && mahalleRes.features.length > 0) {
-      const attr = mahalleRes.features[0].attributes || {};
-      mahalle = {
-        objectid: attr.objectid,
-        ad: (attr.ad || '').trim(),
-        muhtarAdi: (attr.muhtar_adi_soyadi || 'Bilgi Yok').trim(),
-        muhtarTelefon: (attr.muhtar_cep_telefonu || '').trim(),
-        yapiSayisi: attr.yapi_sayisi || 0,
-        kapiSayisi: attr.kapi_sayisi || 0,
-        alanM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null
-      };
-    }
-
-    // 4. Numarataj
-    let numarataj = null;
-    if (numaratajRes.features && numaratajRes.features.length > 0) {
-      const sorted = numaratajRes.features.map((f) => {
-        const attr = f.attributes || {};
-        const geom = f.geometry || {};
-        const dist = geom.y && geom.x ? calculateDistanceMeters(Number(lat), Number(lng), geom.y, geom.x) : 99999;
-        return {
-          objectid: attr.objectid,
-          ad: attr.ad || `${attr.csbm || ''} No: ${attr.tasarimkapino || ''}`.trim(),
-          mahalle: (attr.mahalle || '').trim(),
-          csbm: (attr.csbm || '').trim(),
-          kapiNo: (attr.tasarimkapino || '').trim(),
-          meskenSayisi: attr.toplam_mesken_sayisi || 0,
-          isyeriSayisi: attr.toplam_is_yeri_sayisi || 0,
-          distanceMeters: dist,
-          distanceText: formatDistance(dist),
-          latitude: geom.y,
-          longitude: geom.x
-        };
-      });
-      sorted.sort((a, b) => a.distanceMeters - b.distanceMeters);
-      numarataj = sorted[0];
-    }
-
-    // 5. En Yakın Acil Toplanma Alanı
-    const nearestEmerg = (emergencySnapshot || [])
-      .map((e) => {
-        const dist = calculateDistanceMeters(Number(lat), Number(lng), e.latitude, e.longitude);
-        return { ...e, distanceMeters: dist, distanceText: formatDistance(dist) };
-      })
-      .sort((a, b) => a.distanceMeters - b.distanceMeters)[0] || null;
-
-    // Fotoğrafları çek (Bina veya Numarataj)
-    if (yapi && yapi.objectid) {
-      yapi.photos = await fetchBuildingAttachmentsDirect(8, yapi.objectid).catch(() => []);
-    }
-    if (numarataj && numarataj.objectid) {
-      numarataj.photos = await fetchBuildingAttachmentsDirect(7, numarataj.objectid).catch(() => []);
-    }
-
-    return {
-      coordinates: { lat: Number(lat), lng: Number(lng) },
-      mahalle,
-      kadastro,
-      yapi,
-      numarataj,
-      park: null,
-      nearestEmergency: nearestEmerg
+    yapi = {
+      objectid: attr.objectid,
+      ad: bName,
+      mahalle: (attr.mahalle_adi || attr.mahalle || '').trim(),
+      adaNo: attr.adano || '-',
+      parselNo: attr.parselno || '-',
+      paftaAdi: attr.paftaadi || '-',
+      zeminUstuKat: attr.zeminustukatsayisi !== null && attr.zeminustukatsayisi !== undefined ? Number(attr.zeminustukatsayisi) : '-',
+      zeminAltiKat: attr.zeminaltikatsayisi !== null && attr.zeminaltikatsayisi !== undefined ? Number(attr.zeminaltikatsayisi) : '-',
+      meskenSayisi: attr.toplam_mesken || 0,
+      isyeriSayisi: attr.toplam_isyeri || 0,
+      toplamBölüm: attr.toplam_bb_sayisi || 0,
+      yapiSinifi: attr.yapi_sinifi || '-',
+      asansor: attr.asansor || (attr.asansor_sayisi ? 'Var' : '-'),
+      asansorSayisi: attr.asansor_sayisi || 0,
+      otopark: attr.otopark || '-',
+      yanginMerdiveni: attr.yangin_merdiveni || '-',
+      disCephe: attr.dis_cephe_kaplama || '-',
+      ikametDurumu: attr.ikamet_durumu || '-',
+      fizikselDurum: attr.fiziksel_durum || '-',
+      yapimYili: attr.yapim_yili || '-',
+      tescilliYapi: attr.tescilli_yapi || 'Hayır',
+      guncellemeTarihi: formatEpochDate(attr.guncelleme_tarihi),
+      tabanAlaniM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
+      geometryRings: rings,
+      photos: []
     };
   }
+
+  // 2. Kadastro (Ada / Parsel)
+  let kadastro = null;
+  if (kadastroRes.features && kadastroRes.features.length > 0) {
+    const f = kadastroRes.features[0];
+    const attr = f.attributes || {};
+    const geom = f.geometry || {};
+    let rings = [];
+    if (geom.rings && Array.isArray(geom.rings)) {
+      rings = geom.rings.map((ring) => ring.map((pt) => [pt[1], pt[0]]));
+    }
+    kadastro = {
+      objectid: attr.objectid,
+      ada: attr.ada || '-',
+      parsel: attr.parsel || '-',
+      adaParsel: attr.ada_parsel || (attr.ada && attr.parsel ? `${attr.ada}/${attr.parsel}` : (attr.ada || attr.parsel || '-')),
+      mahalle: (attr.mahalleadi || attr.mahalle || '').trim(),
+      alanM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
+      geometryRings: rings
+    };
+  }
+
+  // 3. Mahalle
+  let mahalle = null;
+  if (mahalleRes.features && mahalleRes.features.length > 0) {
+    const attr = mahalleRes.features[0].attributes || {};
+    mahalle = {
+      objectid: attr.objectid,
+      ad: (attr.ad || '').trim(),
+      muhtarAdi: (attr.muhtar_adi_soyadi || 'Bilgi Yok').trim(),
+      muhtarTelefon: (attr.muhtar_cep_telefonu || '').trim(),
+      yapiSayisi: attr.yapi_sayisi || 0,
+      kapiSayisi: attr.kapi_sayisi || 0,
+      yolSayisi: attr.yol_orta_hat_sayisi || 0,
+      alanM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null
+    };
+  }
+
+  // 4. Numarataj (En Yakın Kapı No / Sokak)
+  let numarataj = null;
+  if (numaratajRes.features && numaratajRes.features.length > 0) {
+    const sorted = numaratajRes.features.map((f) => {
+      const attr = f.attributes || {};
+      const geom = f.geometry || {};
+      const dist = geom.y && geom.x ? calculateDistanceMeters(Number(lat), Number(lng), geom.y, geom.x) : 99999;
+      const kapiNo = (attr.tasarimkapino || attr.numarataj_tasarim || '').trim();
+      return {
+        objectid: attr.objectid,
+        ad: attr.ad || `${attr.csbm || ''} No: ${kapiNo}`.trim(),
+        mahalle: (attr.mahalle || '').trim(),
+        csbm: (attr.csbm || '').trim(),
+        kapiNo,
+        meskenSayisi: attr.toplam_mesken_sayisi || 0,
+        isyeriSayisi: attr.toplam_is_yeri_sayisi || 0,
+        kapiTur: attr.kapi_tur || '-',
+        kapiKullanim: attr.kapi_kullanim || '-',
+        distanceMeters: dist,
+        distanceText: formatDistance(dist),
+        latitude: geom.y,
+        longitude: geom.x
+      };
+    });
+    sorted.sort((a, b) => a.distanceMeters - b.distanceMeters);
+    numarataj = sorted[0];
+  }
+
+  // 5. Park / Yeşil Alan
+  let park = null;
+  if (parkRes && parkRes.features && parkRes.features.length > 0) {
+    const attr = parkRes.features[0].attributes || {};
+    park = {
+      objectid: attr.objectid,
+      ad: (attr.ad || 'Yeşil Alan / Park').trim(),
+      aciklama: attr.saha_aciklama || '',
+      alanM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null
+    };
+  }
+
+  // 6. En Yakın Acil Toplanma Alanı
+  const nearestEmerg = (emergencySnapshot || [])
+    .map((e) => {
+      const dist = calculateDistanceMeters(Number(lat), Number(lng), e.latitude, e.longitude);
+      return { ...e, distanceMeters: dist, distanceText: formatDistance(dist) };
+    })
+    .sort((a, b) => a.distanceMeters - b.distanceMeters)[0] || null;
+
+  // Fotoğrafları çek (Bina veya Numarataj)
+  if (yapi && yapi.objectid) {
+    yapi.photos = await fetchBuildingAttachmentsDirect(8, yapi.objectid).catch(() => []);
+  }
+  if (numarataj && numarataj.objectid) {
+    numarataj.photos = await fetchBuildingAttachmentsDirect(7, numarataj.objectid).catch(() => []);
+  }
+
+  return {
+    coordinates: { lat: Number(lat), lng: Number(lng) },
+    mahalle,
+    kadastro,
+    yapi,
+    numarataj,
+    park,
+    nearestEmergency: nearestEmerg
+  };
 }
 
 export async function fetchEmergencyAreas() {
