@@ -377,6 +377,13 @@ export async function identifyLocation(lat, lng) {
     }
 
     // 5. En Yakın Acil Toplanma Alanı
+    const nearestEmerg = (emergencySnapshot || [])
+      .map((e) => {
+        const dist = calculateDistanceMeters(Number(lat), Number(lng), e.latitude, e.longitude);
+        return { ...e, distanceMeters: dist, distanceText: formatDistance(dist) };
+      })
+      .sort((a, b) => a.distanceMeters - b.distanceMeters)[0] || null;
+
     // Fotoğrafları çek (Bina veya Numarataj)
     if (yapi && yapi.objectid) {
       yapi.photos = await fetchBuildingAttachmentsDirect(8, yapi.objectid).catch(() => []);
@@ -392,7 +399,7 @@ export async function identifyLocation(lat, lng) {
       yapi,
       numarataj,
       park: null,
-      nearestEmergency: nearestEmerg || null
+      nearestEmergency: nearestEmerg
     };
   }
 }
