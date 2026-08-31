@@ -148,7 +148,7 @@ graph TD
 
 ### 1. Projeyi Klonlayın
 ```bash
-git clone https://github.com/mfatihgulcu/elazig-sehir-bilgi-sistemi.git
+git clone https://github.com/crowroser/elazig-sehir-bilgi-sistemi.git
 cd elazig-sehir-bilgi-sistemi
 ```
 
