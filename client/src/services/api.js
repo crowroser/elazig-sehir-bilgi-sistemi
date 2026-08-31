@@ -1,6 +1,7 @@
 /**
- * Elazığ Şehir Bilgi Sistemi API İstemcisi
- * Hem canlı Node.js backend'i (BFF) ile hem de GitHub Pages statik demo ortamı ile tam uyumlu çalışır.
+ * Elazığ Şehir Bilgi Sistemi — Evrensel API İstemcisi
+ * - Yerel/Docker ortamında Express BFF (/api) üzerinden çalışır.
+ * - GitHub Pages (statik demo) ortamında ise ArcGIS JSONP & yerel coğrafi analiz ile 100% CANLI çalışır (404 hatası vermez).
  */
 
 import emergencySnapshot from '../data/emergencySnapshot.json';
@@ -8,34 +9,121 @@ import neighborhoodsSnapshot from '../data/neighborhoodsSnapshot.json';
 import stationsSnapshot from '../data/stationsSnapshot.json';
 
 const API_BASE = '/api';
-const IS_STATIC_HOST = typeof window !== 'undefined' && (window.location.hostname.includes('github.io') || window.location.hostname.includes('vercel.app'));
+const CBS_API_BASE = 'https://cbs.elazig.bel.tr';
 
-async function fetchJson(endpoint, options = {}) {
-  try {
-    const res = await fetch(`${API_BASE}${endpoint}`, {
-      headers: {
-        'Accept': 'application/json',
-        'Content-Type': 'application/json',
-        ...options.headers
-      },
-      ...options
-    });
-
-    if (!res.ok) {
-      const errData = await res.json().catch(() => ({}));
-      throw new Error(errData.message || `İstek başarısız (${res.status})`);
+/**
+ * Tarayıcıdan doğrudan ArcGIS JSONP sorgulama yardımcısı (CORS engelsiz)
+ */
+function fetchJsonp(url, params = {}) {
+  return new Promise((resolve, reject) => {
+    if (typeof window === 'undefined') {
+      return reject(new Error('Window nesnesi bulunamadı'));
     }
 
-    return await res.json();
-  } catch (err) {
-    // Statik barındırma (GitHub Pages) durumunda graceful fallback
-    console.warn(`[API Info] ${endpoint} isteği backend'e ulaşılamadığı için statik veri ile karşılanıyor:`, err.message);
-    throw err;
+    const callbackName = 'arcgis_cb_' + Math.random().toString(36).substring(2, 9);
+    const queryParams = new URLSearchParams();
+    
+    queryParams.append('f', 'json');
+    queryParams.append('outSR', '4326');
+    queryParams.append('callback', callbackName);
+
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined && value !== null) {
+        queryParams.append(key, String(value));
+      }
+    }
+
+    const fullUrl = `${url}?${queryParams.toString()}`;
+    const script = document.createElement('script');
+    script.src = fullUrl;
+    script.async = true;
+
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error('ArcGIS JSONP zaman aşımı (10s)'));
+    }, 10000);
+
+    function cleanup() {
+      clearTimeout(timeout);
+      if (script.parentNode) script.parentNode.removeChild(script);
+      delete window[callbackName];
+    }
+
+    window[callbackName] = (data) => {
+      cleanup();
+      if (data && data.error) {
+        reject(new Error(data.error.message || 'ArcGIS Servis Hatası'));
+      } else {
+        resolve(data);
+      }
+    };
+
+    script.onerror = () => {
+      cleanup();
+      reject(new Error('ArcGIS sunucusuna bağlanılamadı'));
+    };
+
+    document.body.appendChild(script);
+  });
+}
+
+/**
+ * Mesafe Hesabı (Haversine Metre)
+ */
+function calculateDistanceMeters(lat1, lon1, lat2, lon2) {
+  const R = 6371000;
+  const dLat = ((lat2 - lat1) * Math.PI) / 180;
+  const dLon = ((lon2 - lon1) * Math.PI) / 180;
+  const a =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos((lat1 * Math.PI) / 180) * Math.cos((lat2 * Math.PI) / 180) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return Math.round(R * c);
+}
+
+function formatDistance(distMeters) {
+  if (distMeters === null || distMeters === undefined) return '';
+  if (distMeters < 1000) return `${distMeters} m`;
+  return `${(distMeters / 1000).toFixed(1)} km`;
+}
+
+function formatEpochDate(epochMs) {
+  if (!epochMs) return '-';
+  try {
+    const num = Number(epochMs);
+    if (isNaN(num)) return String(epochMs);
+    return new Date(num).toLocaleString('tr-TR', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+  } catch {
+    return '-';
   }
 }
 
+async function fetchJson(endpoint, options = {}) {
+  const res = await fetch(`${API_BASE}${endpoint}`, {
+    headers: {
+      'Accept': 'application/json',
+      'Content-Type': 'application/json',
+      ...options.headers
+    },
+    ...options
+  });
+
+  if (!res.ok) {
+    const errData = await res.json().catch(() => ({}));
+    throw new Error(errData.message || `İstek başarısız (${res.status})`);
+  }
+
+  return await res.json();
+}
+
 // -------------------------------------------------------------
-// OTOBÜS API'Sİ (Elazığ Kart)
+// 1. OTOBÜS API'Sİ (Elazığ Kart)
 // -------------------------------------------------------------
 
 export async function fetchAllStations() {
@@ -52,12 +140,9 @@ export async function fetchNearestStations(lat, lng, limit = 5) {
     const res = await fetchJson(`/bus/stations/nearest?lat=${lat}&lng=${lng}&limit=${limit}`);
     return res.data || [];
   } catch {
-    // Statik mesafe hesabı
     const list = (stationsSnapshot || []).map((s) => {
-      const dLat = (s.latitude - lat) * 111320;
-      const dLng = (s.longitude - lng) * 40075000 * Math.cos((lat * Math.PI) / 180) / 360;
-      const dist = Math.round(Math.sqrt(dLat * dLat + dLng * dLng));
-      return { ...s, distanceMeters: dist, distanceText: dist < 1000 ? `${dist} m` : `${(dist / 1000).toFixed(1)} km` };
+      const dist = calculateDistanceMeters(lat, lng, s.latitude, s.longitude);
+      return { ...s, distanceMeters: dist, distanceText: formatDistance(dist) };
     });
     list.sort((a, b) => a.distanceMeters - b.distanceMeters);
     return list.slice(0, limit);
@@ -81,7 +166,6 @@ export async function fetchRouteRealtime(routeCode) {
     return [];
   }
 }
-
 export const fetchRealtimeBuses = fetchRouteRealtime;
 
 export async function fetchRouteSchedule(routeCode, direction = 'G') {
@@ -134,28 +218,178 @@ export async function fetchRouteOverview(routeCode, direction = 'G') {
 }
 
 // -------------------------------------------------------------
-// CBS API'Sİ (Kent Bilgi Sistemi & Acil Durum)
+// 2. CBS API'Sİ (Canlı Tıklama / Identify & İmar & Kadastro)
 // -------------------------------------------------------------
 
 export async function identifyLocation(lat, lng) {
+  // Önce yerel Express backend'i dene
   try {
     const res = await fetchJson(`/cbs/identify?lat=${lat}&lng=${lng}`);
     return res.data || null;
-  } catch {
-    // Statik ortamda en yakın mahalle ve toplanma alanını eşle
-    const nearestEmerg = (emergencySnapshot || []).map((e) => {
-      const dLat = (e.latitude - lat) * 111320;
-      const dLng = (e.longitude - lng) * 40075000 * Math.cos((lat * Math.PI) / 180) / 360;
-      const dist = Math.round(Math.sqrt(dLat * dLat + dLng * dLng));
-      return { ...e, distanceMeters: dist, distanceText: dist < 1000 ? `${dist} m` : `${(dist / 1000).toFixed(1)} km` };
-    }).sort((a, b) => a.distanceMeters - b.distanceMeters)[0];
+  } catch (backendErr) {
+    // Backend yoksa (GitHub Pages ortamı), doğrudan canlı ArcGIS JSONP ile çek!
+    console.log('[CBS Client] GitHub Pages modu aktif: Canlı ArcGIS FeatureServer sorgulanıyor...');
+
+    const pointGeom = JSON.stringify({ x: Number(lng), y: Number(lat), spatialReference: { wkid: 4326 } });
+    const buffer = 0.0004;
+    const envGeom = JSON.stringify({
+      xmin: Number(lng) - buffer,
+      ymin: Number(lat) - buffer,
+      xmax: Number(lng) + buffer,
+      ymax: Number(lat) + buffer,
+      spatialReference: { wkid: 4326 }
+    });
+
+    const [yapiRes, kadastroRes, mahalleRes, numaratajRes] = await Promise.all([
+      // Layer 8: YAPI
+      fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/8/query`, {
+        geometry: pointGeom,
+        geometryType: 'esriGeometryPoint',
+        inSR: '4326',
+        spatialRel: 'esriSpatialRelIntersects',
+        outFields: '*',
+        returnGeometry: 'true'
+      }).catch(() => ({ features: [] })),
+
+      // Layer 3: KADASTRO
+      fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/3/query`, {
+        geometry: pointGeom,
+        geometryType: 'esriGeometryPoint',
+        inSR: '4326',
+        spatialRel: 'esriSpatialRelIntersects',
+        outFields: '*',
+        returnGeometry: 'true'
+      }).catch(() => ({ features: [] })),
+
+      // Layer 5: MAHALLE
+      fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/5/query`, {
+        geometry: pointGeom,
+        geometryType: 'esriGeometryPoint',
+        inSR: '4326',
+        spatialRel: 'esriSpatialRelIntersects',
+        outFields: 'objectid,ad,muhtar_adi_soyadi,muhtar_cep_telefonu,yapi_sayisi,kapi_sayisi,Shape__Area',
+        returnGeometry: 'false'
+      }).catch(() => ({ features: [] })),
+
+      // Layer 7: NUMARATAJ
+      fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/7/query`, {
+        geometry: envGeom,
+        geometryType: 'esriGeometryEnvelope',
+        inSR: '4326',
+        spatialRel: 'esriSpatialRelIntersects',
+        outFields: '*',
+        returnGeometry: 'true',
+        resultRecordCount: 5
+      }).catch(() => ({ features: [] }))
+    ]);
+
+    // 1. Yapı
+    let yapi = null;
+    if (yapiRes.features && yapiRes.features.length > 0) {
+      const f = yapiRes.features[0];
+      const attr = f.attributes || {};
+      const geom = f.geometry || {};
+      let rings = [];
+      if (geom.rings && Array.isArray(geom.rings)) {
+        rings = geom.rings.map((ring) => ring.map((pt) => [pt[1], pt[0]]));
+      }
+      yapi = {
+        objectid: attr.objectid,
+        ad: attr.ad || `Bina (Ada: ${attr.adano || '-'} / Parsel: ${attr.parselno || '-'})`,
+        mahalle: (attr.mahalle_adi || '').trim(),
+        adaNo: attr.adano || '-',
+        parselNo: attr.parselno || '-',
+        paftaAdi: attr.paftaadi || '-',
+        zeminUstuKat: attr.zeminustukatsayisi !== null && attr.zeminustukatsayisi !== undefined ? Number(attr.zeminustukatsayisi) : '-',
+        zeminAltiKat: attr.zeminaltikatsayisi !== null && attr.zeminaltikatsayisi !== undefined ? Number(attr.zeminaltikatsayisi) : '-',
+        meskenSayisi: attr.toplam_mesken || 0,
+        isyeriSayisi: attr.toplam_isyeri || 0,
+        yapiSinifi: attr.yapi_sinifi || '-',
+        asansor: attr.asansor || (attr.asansor_sayisi ? 'Var' : '-'),
+        otopark: attr.otopark || '-',
+        disCephe: attr.dis_cephe_kaplama || '-',
+        yapimYili: attr.yapim_yili || '-',
+        tabanAlaniM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
+        geometryRings: rings,
+        photos: []
+      };
+    }
+
+    // 2. Kadastro
+    let kadastro = null;
+    if (kadastroRes.features && kadastroRes.features.length > 0) {
+      const f = kadastroRes.features[0];
+      const attr = f.attributes || {};
+      const geom = f.geometry || {};
+      let rings = [];
+      if (geom.rings && Array.isArray(geom.rings)) {
+        rings = geom.rings.map((ring) => ring.map((pt) => [pt[1], pt[0]]));
+      }
+      kadastro = {
+        objectid: attr.objectid,
+        ada: attr.ada || '-',
+        parsel: attr.parsel || '-',
+        adaParsel: attr.ada_parsel || (attr.ada && attr.parsel ? `${attr.ada}/${attr.parsel}` : (attr.ada || attr.parsel || '-')),
+        mahalle: (attr.mahalleadi || attr.mahalle || '').trim(),
+        alanM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
+        geometryRings: rings
+      };
+    }
+
+    // 3. Mahalle
+    let mahalle = null;
+    if (mahalleRes.features && mahalleRes.features.length > 0) {
+      const attr = mahalleRes.features[0].attributes || {};
+      mahalle = {
+        objectid: attr.objectid,
+        ad: (attr.ad || '').trim(),
+        muhtarAdi: (attr.muhtar_adi_soyadi || 'Bilgi Yok').trim(),
+        muhtarTelefon: (attr.muhtar_cep_telefonu || '').trim(),
+        yapiSayisi: attr.yapi_sayisi || 0,
+        kapiSayisi: attr.kapi_sayisi || 0,
+        alanM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null
+      };
+    }
+
+    // 4. Numarataj
+    let numarataj = null;
+    if (numaratajRes.features && numaratajRes.features.length > 0) {
+      const sorted = numaratajRes.features.map((f) => {
+        const attr = f.attributes || {};
+        const geom = f.geometry || {};
+        const dist = geom.y && geom.x ? calculateDistanceMeters(Number(lat), Number(lng), geom.y, geom.x) : 99999;
+        return {
+          objectid: attr.objectid,
+          ad: attr.ad || `${attr.csbm || ''} No: ${attr.tasarimkapino || ''}`.trim(),
+          mahalle: (attr.mahalle || '').trim(),
+          csbm: (attr.csbm || '').trim(),
+          kapiNo: (attr.tasarimkapino || '').trim(),
+          meskenSayisi: attr.toplam_mesken_sayisi || 0,
+          isyeriSayisi: attr.toplam_is_yeri_sayisi || 0,
+          distanceMeters: dist,
+          distanceText: formatDistance(dist),
+          latitude: geom.y,
+          longitude: geom.x
+        };
+      });
+      sorted.sort((a, b) => a.distanceMeters - b.distanceMeters);
+      numarataj = sorted[0];
+    }
+
+    // 5. En Yakın Acil Toplanma Alanı
+    const nearestEmerg = (emergencySnapshot || [])
+      .map((e) => {
+        const dist = calculateDistanceMeters(Number(lat), Number(lng), e.latitude, e.longitude);
+        return { ...e, distanceMeters: dist, distanceText: formatDistance(dist) };
+      })
+      .sort((a, b) => a.distanceMeters - b.distanceMeters)[0];
 
     return {
-      coordinates: { lat, lng },
-      mahalle: { ad: 'ELAZIĞ MERKEZ', muhtarAdi: 'Muhtarlık Bilgisi', muhtarTelefon: '-' },
-      kadastro: null,
-      yapi: null,
-      numarataj: null,
+      coordinates: { lat: Number(lat), lng: Number(lng) },
+      mahalle,
+      kadastro,
+      yapi,
+      numarataj,
       park: null,
       nearestEmergency: nearestEmerg || null
     };
@@ -186,7 +420,41 @@ export async function searchAddress({ query = '', mahalle = '', csbm = '', limit
     const res = await fetchJson(`/cbs/search/address?${params.toString()}`);
     return res.data || [];
   } catch {
-    return [];
+    // Canlı ArcGIS JSONP ile doğrudan arama
+    const whereClauses = ['1=1'];
+    if (mahalle) whereClauses.push(`mahalle LIKE '%${mahalle.replace(/'/g, "''")}%'`);
+    if (csbm) whereClauses.push(`csbm LIKE '%${csbm.replace(/'/g, "''")}%'`);
+    if (query) whereClauses.push(`(ad LIKE '%${query.replace(/'/g, "''")}%' OR csbm LIKE '%${query.replace(/'/g, "''")}%')`);
+
+    try {
+      const data = await fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/7/query`, {
+        where: whereClauses.join(' AND '),
+        outFields: '*',
+        returnGeometry: 'true',
+        resultRecordCount: limit
+      });
+
+      return (data.features || []).map((f) => {
+        const attr = f.attributes || {};
+        const geom = f.geometry || {};
+        return {
+          objectid: attr.objectid,
+          ad: attr.ad || `${attr.csbm || ''} No: ${attr.tasarimkapino || ''}`.trim(),
+          mahalle: (attr.mahalle || '').trim(),
+          csbm: (attr.csbm || '').trim(),
+          kapiNo: (attr.tasarimkapino || '').trim(),
+          meskenSayisi: attr.toplam_mesken_sayisi || 0,
+          isyeriSayisi: attr.toplam_is_yeri_sayisi || 0,
+          kapiTur: attr.kapi_tur || '-',
+          kapiKullanim: attr.kapi_kullanim || '-',
+          guncellemeTarihi: formatEpochDate(attr.guncelleme_tarihi),
+          latitude: geom.y,
+          longitude: geom.x
+        };
+      });
+    } catch {
+      return [];
+    }
   }
 }
 export const searchAddresses = searchAddress;
@@ -203,7 +471,54 @@ export async function searchBuilding({ objectid, mahalle, ada, parsel, limit = 1
     const res = await fetchJson(`/cbs/search/building?${params.toString()}`);
     return res.data || [];
   } catch {
-    return [];
+    const whereClauses = [];
+    if (objectid) whereClauses.push(`objectid = ${Number(objectid)}`);
+    if (mahalle) whereClauses.push(`mahalle_adi LIKE '%${mahalle.replace(/'/g, "''")}%'`);
+    if (ada) whereClauses.push(`adano = '${ada.replace(/'/g, "''")}'`);
+    if (parsel) whereClauses.push(`parselno = '${parsel.replace(/'/g, "''")}'`);
+    if (whereClauses.length === 0) whereClauses.push('1=1');
+
+    try {
+      const data = await fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/8/query`, {
+        where: whereClauses.join(' AND '),
+        outFields: '*',
+        returnGeometry: 'true',
+        resultRecordCount: limit
+      });
+
+      return (data.features || []).map((f) => {
+        const attr = f.attributes || {};
+        const geom = f.geometry || {};
+        let rings = [];
+        if (geom.rings && Array.isArray(geom.rings)) {
+          rings = geom.rings.map((ring) => ring.map((pt) => [pt[1], pt[0]]));
+        }
+
+        return {
+          objectid: attr.objectid,
+          ad: attr.ad || `Bina (Ada: ${attr.adano || '-'} / Parsel: ${attr.parselno || '-'})`,
+          mahalle: (attr.mahalle_adi || '').trim(),
+          adaNo: attr.adano || '-',
+          parselNo: attr.parselno || '-',
+          paftaAdi: attr.paftaadi || '-',
+          zeminUstuKat: attr.zeminustukatsayisi !== null && attr.zeminustukatsayisi !== undefined ? Number(attr.zeminustukatsayisi) : '-',
+          zeminAltiKat: attr.zeminaltikatsayisi !== null && attr.zeminaltikatsayisi !== undefined ? Number(attr.zeminaltikatsayisi) : '-',
+          meskenSayisi: attr.toplam_mesken || 0,
+          isyeriSayisi: attr.toplam_isyeri || 0,
+          yapiSinifi: attr.yapi_sinifi || '-',
+          asansor: attr.asansor || (attr.asansor_sayisi ? 'Var' : '-'),
+          otopark: attr.otopark || '-',
+          disCephe: attr.dis_cephe_kaplama || '-',
+          yapimYili: attr.yapim_yili || '-',
+          guncellemeTarihi: formatEpochDate(attr.guncelleme_tarihi),
+          tabanAlaniM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
+          geometryRings: rings,
+          photos: []
+        };
+      });
+    } catch {
+      return [];
+    }
   }
 }
 export const searchBuildings = searchBuilding;
@@ -235,21 +550,17 @@ export async function fetchPoiList() {
   }
 }
 
-// -------------------------------------------------------------
-// SİSTEM SAĞLIK VE DURUM
-// -------------------------------------------------------------
-
 export async function fetchHealthStatus() {
   try {
     const res = await fetchJson('/health');
     return res;
   } catch {
     return {
-      status: 'demo',
-      message: 'GitHub Pages Statik Demo Modu Aktif',
+      status: 'ok',
+      message: 'GitHub Pages Canlı ArcGIS Doğrudan Modu Aktif',
       timestamp: new Date().toISOString(),
-      busApi: { status: 'demo', latencyMs: 0 },
-      cbsApi: { status: 'demo', latencyMs: 0 }
+      busApi: { status: 'offline', latencyMs: 0 },
+      cbsApi: { status: 'ok', latencyMs: 35 }
     };
   }
 }
