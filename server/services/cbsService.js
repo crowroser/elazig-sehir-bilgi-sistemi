@@ -1,7 +1,15 @@
 import { formatEpochDate, normalizeNeighborhoodName, normalizeTurkishText, calculateDistanceMeters, formatDistance } from '../utils/geoUtils.js';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const emergencySnapshot = require('../data/emergencySnapshot.json');
+const neighborhoodsSnapshot = require('../data/neighborhoodsSnapshot.json');
 
 const CBS_API_BASE = 'https://cbs.elazig.bel.tr';
-const REFERER_HEADER = { 'Referer': 'https://cbs.elazig.bel.tr/kentbilgisistemi' };
+const REFERER_HEADER = {
+  'Referer': 'https://cbs.elazig.bel.tr/kentbilgisistemi',
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+};
 
 // In-Memory Cache
 const cache = {
@@ -104,7 +112,7 @@ export function buildTurkishFuzzyTerms(text) {
 /**
  * Genel ArcGIS FeatureServer Query Yardımcısı
  */
-async function queryArcGis(servicePath, params = {}) {
+async function queryArcGis(servicePath, params = {}, timeoutMs = 4500) {
   const defaultParams = {
     f: 'json',
     outSR: '4326',
@@ -128,7 +136,8 @@ async function queryArcGis(servicePath, params = {}) {
       headers: {
         'Accept': 'application/json',
         ...REFERER_HEADER
-      }
+      },
+      signal: AbortSignal.timeout(timeoutMs)
     });
 
     if (!response.ok) {
@@ -156,48 +165,57 @@ export async function getEmergencyAssemblyAreas() {
     return cache.emergency.data;
   }
 
-  const data = await queryArcGis('/server/rest/services/acil_toplanma/FeatureServer/0', {
-    where: '1=1',
-    outFields: '*',
-    returnGeometry: 'true',
-    outSR: '4326'
-  });
+  try {
+    const data = await queryArcGis('/server/rest/services/acil_toplanma/FeatureServer/0', {
+      where: '1=1',
+      outFields: '*',
+      returnGeometry: 'true',
+      outSR: '4326'
+    });
 
-  const features = data.features || [];
-  const list = features.map((f) => {
-    const attr = f.attributes || {};
-    const geom = f.geometry || {};
+    const features = data.features || [];
+    const list = features.map((f) => {
+      const attr = f.attributes || {};
+      const geom = f.geometry || {};
 
-    const lat = geom.y !== undefined ? geom.y : attr.enlem_koor;
-    const lng = geom.x !== undefined ? geom.x : attr.boylam_koo;
+      const lat = geom.y !== undefined ? geom.y : attr.enlem_koor;
+      const lng = geom.x !== undefined ? geom.x : attr.boylam_koo;
 
-    const hasValue = (val) => {
-      if (!val) return false;
-      const str = String(val).trim().toUpperCase();
-      return str === 'VAR' || str === 'EVET' || str === '1' || str === '+' || str === 'UYGUN';
-    };
+      const hasValue = (val) => {
+        if (!val) return false;
+        const str = String(val).trim().toUpperCase();
+        return str === 'VAR' || str === 'EVET' || str === '1' || str === '+' || str === 'UYGUN';
+      };
 
-    return {
-      objectid: attr.objectid,
-      siraNo: attr.sira_no || 0,
-      mahalle: (attr.mahalle_ad || '').trim(),
-      mevkii: (attr.mevki̇i̇ || attr.mevkii || '').trim(),
-      parkAdi: (attr.park_adi || attr.mevki̇i̇ || attr.mahalle_ad || 'Acil Toplanma Alanı').trim(),
-      alanM2: attr.m2 ? Number(String(attr.m2).replace(/\D/g, '')) || String(attr.m2).trim() : null,
-      engelliUygun: hasValue(attr.engelli̇_ || attr.engelli_),
-      elektrik: hasValue(attr.elektri̇k || attr.elektrik),
-      su: hasValue(attr.su),
-      wc: hasValue(attr.wc),
-      latitude: lat ? Number(lat) : null,
-      longitude: lng ? Number(lng) : null
-    };
-  });
+      return {
+        objectid: attr.objectid,
+        siraNo: attr.sira_no || 0,
+        mahalle: (attr.mahalle_ad || '').trim(),
+        mevkii: (attr.mevki̇i̇ || attr.mevkii || '').trim(),
+        parkAdi: (attr.park_adi || attr.mevki̇i̇ || attr.mahalle_ad || 'Acil Toplanma Alanı').trim(),
+        alanM2: attr.m2 ? Number(String(attr.m2).replace(/\D/g, '')) || String(attr.m2).trim() : null,
+        engelliUygun: hasValue(attr.engelli̇_ || attr.engelli_),
+        elektrik: hasValue(attr.elektri̇k || attr.elektrik),
+        su: hasValue(attr.su),
+        wc: hasValue(attr.wc),
+        latitude: lat ? Number(lat) : null,
+        longitude: lng ? Number(lng) : null
+      };
+    });
 
-  list.sort((a, b) => a.siraNo - b.siraNo);
+    list.sort((a, b) => a.siraNo - b.siraNo);
 
-  cache.emergency.data = list;
-  cache.emergency.timestamp = now;
-  return list;
+    if (list.length > 0) {
+      cache.emergency.data = list;
+      cache.emergency.timestamp = now;
+      return list;
+    }
+  } catch (err) {
+    console.warn('[CBS API] Acil toplanma alanları canlı sunucudan alınamadı, snapshot kullanılıyor:', err.message);
+  }
+
+  // Canlı sorgu başarısızsa (Vercel IP engeli vb.) snapshot yedeği döndür
+  return emergencySnapshot || [];
 }
 
 /**
@@ -209,158 +227,16 @@ export async function getNeighborhoods(includeGeometry = true) {
     return cache.neighborhoods.data;
   }
 
-  const data = await queryArcGis('/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/5', {
-    where: '1=1',
-    outFields: 'objectid,id,ad,muhtar_adi_soyadi,muhtar_cep_telefonu,yapi_sayisi,kapi_sayisi,yol_orta_hat_sayisi,Shape__Area,Shape__Length',
-    returnGeometry: includeGeometry ? 'true' : 'false',
-    outSR: '4326',
-    orderByFields: 'ad'
-  });
-
-  const list = (data.features || []).map((f) => {
-    const attr = f.attributes || {};
-    const geom = f.geometry || {};
-
-    let rings = [];
-    if (geom.rings && Array.isArray(geom.rings)) {
-      rings = geom.rings.map((ring) => ring.map((pt) => [pt[1], pt[0]]));
-    }
-
-    return {
-      objectid: attr.objectid,
-      id: attr.id,
-      ad: (attr.ad || '').trim(),
-      normalizedName: normalizeNeighborhoodName(attr.ad),
-      muhtarAdi: (attr.muhtar_adi_soyadi || 'Bilgi Yok').trim(),
-      muhtarTelefon: (attr.muhtar_cep_telefonu || '').trim(),
-      yapiSayisi: attr.yapi_sayisi || 0,
-      kapiSayisi: attr.kapi_sayisi || 0,
-      yolSayisi: attr.yol_orta_hat_sayisi || 0,
-      alanM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
-      geometryRings: rings
-    };
-  });
-
-  cache.neighborhoods.data = list;
-  cache.neighborhoods.timestamp = now;
-  return list;
-}
-
-/**
- * 3. Numarataj / Kapı No ve Adres Arama (Layer 7 NUMARATAJ)
- */
-export async function searchAddress({ query = '', mahalle = '', csbm = '', limit = 25 }) {
-  const whereClauses = ['1=1'];
-
-  if (mahalle && mahalle.trim()) {
-    const terms = buildTurkishFuzzyTerms(mahalle);
-    if (terms.length > 0) {
-      const mahalleClauses = terms.map((t) => `mahalle LIKE '%${t.replace(/'/g, "''")}%'`);
-      whereClauses.push(`(${mahalleClauses.join(' OR ')})`);
-    }
-  }
-
-  if (csbm && csbm.trim()) {
-    const terms = buildTurkishFuzzyTerms(csbm);
-    if (terms.length > 0) {
-      const csbmClauses = terms.map((t) => `csbm LIKE '%${t.replace(/'/g, "''")}%'`);
-      whereClauses.push(`(${csbmClauses.join(' OR ')})`);
-    }
-  }
-
-  if (query && query.trim()) {
-    const terms = buildTurkishFuzzyTerms(query);
-    const qClauses = [];
-    terms.forEach((t) => {
-      const escaped = t.replace(/'/g, "''");
-      qClauses.push(`ad LIKE '%${escaped}%'`);
-      qClauses.push(`csbm LIKE '%${escaped}%'`);
-      qClauses.push(`tasarimkapino LIKE '%${escaped}%'`);
+  try {
+    const data = await queryArcGis('/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/5', {
+      where: '1=1',
+      outFields: 'objectid,id,ad,muhtar_adi_soyadi,muhtar_cep_telefonu,yapi_sayisi,kapi_sayisi,yol_orta_hat_sayisi,Shape__Area,Shape__Length',
+      returnGeometry: includeGeometry ? 'true' : 'false',
+      outSR: '4326',
+      orderByFields: 'ad'
     });
-    if (qClauses.length > 0) {
-      whereClauses.push(`(${qClauses.join(' OR ')})`);
-    }
-  }
 
-  const whereSql = whereClauses.join(' AND ');
-
-  const data = await queryArcGis('/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/7', {
-    where: whereSql,
-    outFields: 'objectid,ad,mahalle,csbm,tasarimkapino,toplam_mesken_sayisi,toplam_is_yeri_sayisi,kapi_tur,kapi_kullanim,guncelleme_tarihi',
-    returnGeometry: 'true',
-    outSR: '4326',
-    resultRecordCount: Math.min(limit, 50)
-  });
-
-  return (data.features || []).map((f) => {
-    const attr = f.attributes || {};
-    const geom = f.geometry || {};
-
-    return {
-      objectid: attr.objectid,
-      ad: attr.ad || `${attr.csbm || ''} No: ${attr.tasarimkapino || ''}`.trim(),
-      mahalle: (attr.mahalle || '').trim(),
-      csbm: (attr.csbm || '').trim(),
-      kapiNo: (attr.tasarimkapino || '').trim(),
-      meskenSayisi: attr.toplam_mesken_sayisi || 0,
-      isyeriSayisi: attr.toplam_is_yeri_sayisi || 0,
-      kapiTur: attr.kapi_tur || '-',
-      kapiKullanim: attr.kapi_kullanim || '-',
-      guncellemeTarihi: formatEpochDate(attr.guncelleme_tarihi),
-      latitude: geom.y !== undefined ? geom.y : null,
-      longitude: geom.x !== undefined ? geom.x : null
-    };
-  });
-}
-
-/**
- * 4. Yapı / Bina Detay Sorgulama (Layer 8 YAPI)
- */
-export async function searchBuilding({ objectid, mahalle, ada, parsel, limit = 10 }) {
-  const whereClauses = [];
-
-  if (objectid) {
-    whereClauses.push(`objectid = ${Number(objectid)}`);
-  } else {
-    if (mahalle && mahalle.trim()) {
-      const terms = buildTurkishFuzzyTerms(mahalle);
-      if (terms.length > 0) {
-        const mClauses = terms.map((t) => `mahalle_adi LIKE '%${t.replace(/'/g, "''")}%'`);
-        whereClauses.push(`(${mClauses.join(' OR ')})`);
-      }
-    }
-    if (ada && ada.trim()) {
-      whereClauses.push(`adano = '${ada.trim().replace(/'/g, "''")}'`);
-    }
-    if (parsel && parsel.trim()) {
-      whereClauses.push(`parselno = '${parsel.trim().replace(/'/g, "''")}'`);
-    }
-  }
-
-  if (whereClauses.length === 0) {
-    whereClauses.push('1=1');
-  }
-
-  const whereSql = whereClauses.join(' AND ');
-
-  const outFields = [
-    'objectid', 'ad', 'mahalle_adi', 'adano', 'parselno', 'paftaadi',
-    'zeminustukatsayisi', 'zeminaltikatsayisi', 'toplam_mesken', 'toplam_isyeri',
-    'toplam_bb_sayisi', 'yapi_sinifi', 'asansor', 'asansor_sayisi', 'asansor_kapasite',
-    'otopark', 'yangin_merdiveni', 'dis_cephe_kaplama', 'ikamet_durumu', 'fiziksel_durum',
-    'yapim_yili', 'tescilli_yapi', 'guncelleme_tarihi', 'olusturma_tarihi', 'Shape__Area'
-  ].join(',');
-
-  const data = await queryArcGis('/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/8', {
-    where: whereSql,
-    outFields,
-    returnGeometry: 'true',
-    outSR: '4326',
-    resultRecordCount: limit
-  });
-
-  const buildings = await Promise.all(
-    (data.features || []).map(async (f) => {
+    const list = (data.features || []).map((f) => {
       const attr = f.attributes || {};
       const geom = f.geometry || {};
 
@@ -369,39 +245,202 @@ export async function searchBuilding({ objectid, mahalle, ada, parsel, limit = 1
         rings = geom.rings.map((ring) => ring.map((pt) => [pt[1], pt[0]]));
       }
 
-      const photos = await getLayerAttachments(8, attr.objectid).catch(() => []);
+      return {
+        objectid: attr.objectid,
+        id: attr.id,
+        ad: (attr.ad || '').trim(),
+        normalizedName: normalizeNeighborhoodName(attr.ad),
+        muhtarAdi: (attr.muhtar_adi_soyadi || 'Bilgi Yok').trim(),
+        muhtarTelefon: (attr.muhtar_cep_telefonu || '').trim(),
+        yapiSayisi: attr.yapi_sayisi || 0,
+        kapiSayisi: attr.kapi_sayisi || 0,
+        yolSayisi: attr.yol_orta_hat_sayisi || 0,
+        alanM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
+        geometryRings: rings
+      };
+    });
+
+    if (list.length > 0) {
+      cache.neighborhoods.data = list;
+      cache.neighborhoods.timestamp = now;
+      return list;
+    }
+  } catch (err) {
+    console.warn('[CBS API] Mahalleler canlı sunucudan alınamadı, snapshot kullanılıyor:', err.message);
+  }
+
+  // Canlı sorgu başarısızsa (Vercel IP engeli vb.) snapshot yedeği döndür
+  return neighborhoodsSnapshot || [];
+}
+
+/**
+ * 3. Numarataj / Kapı No ve Adres Arama (Layer 7 NUMARATAJ)
+ */
+export async function searchAddress({ query = '', mahalle = '', csbm = '', limit = 25 }) {
+  try {
+    const whereClauses = ['1=1'];
+
+    if (mahalle && mahalle.trim()) {
+      const terms = buildTurkishFuzzyTerms(mahalle);
+      if (terms.length > 0) {
+        const mahalleClauses = terms.map((t) => `mahalle LIKE '%${t.replace(/'/g, "''")}%'`);
+        whereClauses.push(`(${mahalleClauses.join(' OR ')})`);
+      }
+    }
+
+    if (csbm && csbm.trim()) {
+      const terms = buildTurkishFuzzyTerms(csbm);
+      if (terms.length > 0) {
+        const csbmClauses = terms.map((t) => `csbm LIKE '%${t.replace(/'/g, "''")}%'`);
+        whereClauses.push(`(${csbmClauses.join(' OR ')})`);
+      }
+    }
+
+    if (query && query.trim()) {
+      const terms = buildTurkishFuzzyTerms(query);
+      const qClauses = [];
+      terms.forEach((t) => {
+        const escaped = t.replace(/'/g, "''");
+        qClauses.push(`ad LIKE '%${escaped}%'`);
+        qClauses.push(`csbm LIKE '%${escaped}%'`);
+        qClauses.push(`tasarimkapino LIKE '%${escaped}%'`);
+        qClauses.push(`numarataj_tasarim LIKE '%${escaped}%'`);
+      });
+      if (qClauses.length > 0) {
+        whereClauses.push(`(${qClauses.join(' OR ')})`);
+      }
+    }
+
+    const whereSql = whereClauses.join(' AND ');
+
+    const data = await queryArcGis('/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/7', {
+      where: whereSql,
+      outFields: '*',
+      returnGeometry: 'true',
+      outSR: '4326',
+      resultRecordCount: Math.min(limit, 50)
+    });
+
+    return (data.features || []).map((f) => {
+      const attr = f.attributes || {};
+      const geom = f.geometry || {};
+      const kapiNo = (attr.tasarimkapino || attr.numarataj_tasarim || '').trim();
 
       return {
         objectid: attr.objectid,
-        ad: attr.ad || `Bina (Ada: ${attr.adano || '-'} / Parsel: ${attr.parselno || '-'})`,
-        mahalle: (attr.mahalle_adi || '').trim(),
-        adaNo: attr.adano || '-',
-        parselNo: attr.parselno || '-',
-        paftaAdi: attr.paftaadi || '-',
-        zeminUstuKat: attr.zeminustukatsayisi !== null && attr.zeminustukatsayisi !== undefined ? Number(attr.zeminustukatsayisi) : '-',
-        zeminAltiKat: attr.zeminaltikatsayisi !== null && attr.zeminaltikatsayisi !== undefined ? Number(attr.zeminaltikatsayisi) : '-',
-        meskenSayisi: attr.toplam_mesken || 0,
-        isyeriSayisi: attr.toplam_isyeri || 0,
-        toplamBölüm: attr.toplam_bb_sayisi || 0,
-        yapiSinifi: attr.yapi_sinifi || '-',
-        asansor: attr.asansor || (attr.asansor_sayisi ? 'Var' : '-'),
-        asansorSayisi: attr.asansor_sayisi || 0,
-        otopark: attr.otopark || '-',
-        yanginMerdiveni: attr.yangin_merdiveni || '-',
-        disCephe: attr.dis_cephe_kaplama || '-',
-        ikametDurumu: attr.ikamet_durumu || '-',
-        fizikselDurum: attr.fiziksel_durum || '-',
-        yapimYili: attr.yapim_yili || '-',
-        tescilliYapi: attr.tescilli_yapi || 'Hayır',
+        ad: attr.ad || `${attr.csbm || ''} No: ${kapiNo}`.trim(),
+        mahalle: (attr.mahalle || '').trim(),
+        csbm: (attr.csbm || '').trim(),
+        kapiNo,
+        meskenSayisi: attr.toplam_mesken_sayisi || 0,
+        isyeriSayisi: attr.toplam_is_yeri_sayisi || 0,
+        kapiTur: attr.kapi_tur || '-',
+        kapiKullanim: attr.kapi_kullanim || '-',
         guncellemeTarihi: formatEpochDate(attr.guncelleme_tarihi),
-        tabanAlaniM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
-        geometryRings: rings,
-        photos
+        latitude: geom.y !== undefined ? geom.y : null,
+        longitude: geom.x !== undefined ? geom.x : null
       };
-    })
-  );
+    });
+  } catch (err) {
+    console.warn('[CBS API] Adres arama canlı sunucu hatası:', err.message);
+    return [];
+  }
+}
 
-  return buildings;
+/**
+ * 4. Yapı / Bina Detay Sorgulama (Layer 8 YAPI)
+ */
+export async function searchBuilding({ objectid, mahalle, ada, parsel, limit = 10 }) {
+  try {
+    const whereClauses = [];
+
+    if (objectid) {
+      whereClauses.push(`objectid = ${Number(objectid)}`);
+    } else {
+      if (mahalle && mahalle.trim()) {
+        const terms = buildTurkishFuzzyTerms(mahalle);
+        if (terms.length > 0) {
+          const mClauses = terms.map((t) => `mahalle_adi LIKE '%${t.replace(/'/g, "''")}%'`);
+          whereClauses.push(`(${mClauses.join(' OR ')})`);
+        }
+      }
+      if (ada && ada.trim()) {
+        whereClauses.push(`adano = '${ada.trim().replace(/'/g, "''")}'`);
+      }
+      if (parsel && parsel.trim()) {
+        whereClauses.push(`parselno = '${parsel.trim().replace(/'/g, "''")}'`);
+      }
+    }
+
+    if (whereClauses.length === 0) {
+      whereClauses.push('1=1');
+    }
+
+    const whereSql = whereClauses.join(' AND ');
+
+    const outFields = [
+      'objectid', 'ad', 'mahalle_adi', 'adano', 'parselno', 'paftaadi',
+      'zeminustukatsayisi', 'zeminaltikatsayisi', 'toplam_mesken', 'toplam_isyeri',
+      'toplam_bb_sayisi', 'yapi_sinifi', 'asansor', 'asansor_sayisi', 'asansor_kapasite',
+      'otopark', 'yangin_merdiveni', 'dis_cephe_kaplama', 'ikamet_durumu', 'fiziksel_durum',
+      'yapim_yili', 'tescilli_yapi', 'guncelleme_tarihi', 'olusturma_tarihi', 'Shape__Area'
+    ].join(',');
+
+    const data = await queryArcGis('/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/8', {
+      where: whereSql,
+      outFields,
+      returnGeometry: 'true',
+      outSR: '4326',
+      resultRecordCount: limit
+    });
+
+    const buildings = await Promise.all(
+      (data.features || []).map(async (f) => {
+        const attr = f.attributes || {};
+        const geom = f.geometry || {};
+
+        let rings = [];
+        if (geom.rings && Array.isArray(geom.rings)) {
+          rings = geom.rings.map((ring) => ring.map((pt) => [pt[1], pt[0]]));
+        }
+
+        const photos = await getLayerAttachments(8, attr.objectid).catch(() => []);
+
+        return {
+          objectid: attr.objectid,
+          ad: attr.ad || `Bina (Ada: ${attr.adano || '-'} / Parsel: ${attr.parselno || '-'})`,
+          mahalle: (attr.mahalle_adi || '').trim(),
+          adaNo: attr.adano || '-',
+          parselNo: attr.parselno || '-',
+          paftaAdi: attr.paftaadi || '-',
+          zeminUstuKat: attr.zeminustukatsayisi !== null && attr.zeminustukatsayisi !== undefined ? Number(attr.zeminustukatsayisi) : '-',
+          zeminAltiKat: attr.zeminaltikatsayisi !== null && attr.zeminaltikatsayisi !== undefined ? Number(attr.zeminaltikatsayisi) : '-',
+          meskenSayisi: attr.toplam_mesken || 0,
+          isyeriSayisi: attr.toplam_isyeri || 0,
+          toplamBölüm: attr.toplam_bb_sayisi || 0,
+          yapiSinifi: attr.yapi_sinifi || '-',
+          asansor: attr.asansor || (attr.asansor_sayisi ? 'Var' : '-'),
+          asansorSayisi: attr.asansor_sayisi || 0,
+          otopark: attr.otopark || '-',
+          yanginMerdiveni: attr.yangin_merdiveni || '-',
+          disCephe: attr.dis_cephe_kaplama || '-',
+          ikametDurumu: attr.ikamet_durumu || '-',
+          fizikselDurum: attr.fiziksel_durum || '-',
+          yapimYili: attr.yapim_yili || '-',
+          tescilliYapi: attr.tescilli_yapi || 'Hayır',
+          guncellemeTarihi: formatEpochDate(attr.guncelleme_tarihi),
+          tabanAlaniM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
+          geometryRings: rings,
+          photos
+        };
+      })
+    );
+
+    return buildings;
+  } catch (err) {
+    console.warn('[CBS API] Bina sorgulama canlı sunucu hatası:', err.message);
+    return [];
+  }
 }
 
 /**
@@ -413,35 +452,40 @@ export async function getGreenAreas() {
     return cache.greenAreas.data;
   }
 
-  const data = await queryArcGis('/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/2', {
-    where: '1=1',
-    outFields: 'objectid,ad,Shape__Area,saha_aciklama',
-    returnGeometry: 'true',
-    outSR: '4326',
-    resultRecordCount: 150
-  });
+  try {
+    const data = await queryArcGis('/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/2', {
+      where: '1=1',
+      outFields: 'objectid,ad,Shape__Area,saha_aciklama',
+      returnGeometry: 'true',
+      outSR: '4326',
+      resultRecordCount: 150
+    });
 
-  const list = (data.features || []).map((f) => {
-    const attr = f.attributes || {};
-    const geom = f.geometry || {};
+    const list = (data.features || []).map((f) => {
+      const attr = f.attributes || {};
+      const geom = f.geometry || {};
 
-    let rings = [];
-    if (geom.rings && Array.isArray(geom.rings)) {
-      rings = geom.rings.map((ring) => ring.map((pt) => [pt[1], pt[0]]));
-    }
+      let rings = [];
+      if (geom.rings && Array.isArray(geom.rings)) {
+        rings = geom.rings.map((ring) => ring.map((pt) => [pt[1], pt[0]]));
+      }
 
-    return {
-      objectid: attr.objectid,
-      ad: (attr.ad || 'Yeşil Alan / Park').trim(),
-      aciklama: attr.saha_aciklama || '',
-      alanM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
-      geometryRings: rings
-    };
-  });
+      return {
+        objectid: attr.objectid,
+        ad: (attr.ad || 'Yeşil Alan / Park').trim(),
+        aciklama: attr.saha_aciklama || '',
+        alanM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
+        geometryRings: rings
+      };
+    });
 
-  cache.greenAreas.data = list;
-  cache.greenAreas.timestamp = now;
-  return list;
+    cache.greenAreas.data = list;
+    cache.greenAreas.timestamp = now;
+    return list;
+  } catch (err) {
+    console.warn('[CBS API] Yeşil alanlar canlı sunucu hatası:', err.message);
+    return [];
+  }
 }
 
 /**
@@ -453,33 +497,38 @@ export async function getPoiList() {
     return cache.poiList.data;
   }
 
-  const data = await queryArcGis('/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/0', {
-    where: '1=1',
-    outFields: 'objectid,ad,onemli_noktalar,mahalle,yol,kapino',
-    returnGeometry: 'true',
-    outSR: '4326',
-    resultRecordCount: 150
-  });
+  try {
+    const data = await queryArcGis('/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/0', {
+      where: '1=1',
+      outFields: 'objectid,ad,onemli_noktalar,mahalle,yol,kapino',
+      returnGeometry: 'true',
+      outSR: '4326',
+      resultRecordCount: 150
+    });
 
-  const list = (data.features || []).map((f) => {
-    const attr = f.attributes || {};
-    const geom = f.geometry || {};
+    const list = (data.features || []).map((f) => {
+      const attr = f.attributes || {};
+      const geom = f.geometry || {};
 
-    return {
-      objectid: attr.objectid,
-      ad: (attr.ad || attr.onemli_noktalar || 'Önemli Nokta').trim(),
-      kategori: (attr.onemli_noktalar || '').trim(),
-      mahalle: (attr.mahalle || '').trim(),
-      yol: (attr.yol || '').trim(),
-      kapino: (attr.kapino || '').trim(),
-      latitude: geom.y !== undefined ? geom.y : null,
-      longitude: geom.x !== undefined ? geom.x : null
-    };
-  });
+      return {
+        objectid: attr.objectid,
+        ad: (attr.ad || attr.onemli_noktalar || 'Önemli Nokta').trim(),
+        kategori: (attr.onemli_noktalar || '').trim(),
+        mahalle: (attr.mahalle || '').trim(),
+        yol: (attr.yol || '').trim(),
+        kapino: (attr.kapino || '').trim(),
+        latitude: geom.y !== undefined ? geom.y : null,
+        longitude: geom.x !== undefined ? geom.x : null
+      };
+    });
 
-  cache.poiList.data = list;
-  cache.poiList.timestamp = now;
-  return list;
+    cache.poiList.data = list;
+    cache.poiList.timestamp = now;
+    return list;
+  } catch (err) {
+    console.warn('[CBS API] POI listesi canlı sunucu hatası:', err.message);
+    return [];
+  }
 }
 
 /**

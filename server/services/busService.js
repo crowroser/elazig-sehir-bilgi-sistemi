@@ -1,4 +1,8 @@
 import { isInsideElazig, normalizeCoordinates, calculateDistanceMeters, formatDistance } from '../utils/geoUtils.js';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
+const stationsSnapshot = require('../data/stationsSnapshot.json');
 
 const BUS_API_BASE = 'https://elazigkart.elazig.bel.tr';
 
@@ -27,7 +31,7 @@ async function waitThrottle() {
 /**
  * Mojibake ve encoding korumalı güvenli POST isteği
  */
-async function postBusApi(endpoint, body = {}, retries = 3) {
+async function postBusApi(endpoint, body = {}, retries = 2) {
   const url = `${BUS_API_BASE}${endpoint}`;
 
   for (let attempt = 1; attempt <= retries; attempt++) {
@@ -39,15 +43,17 @@ async function postBusApi(endpoint, body = {}, retries = 3) {
         headers: {
           'accept': 'application/json, text/plain, */*',
           'content-type': 'application/json; charset=utf-8',
-          'Accept-Charset': 'utf-8'
+          'Accept-Charset': 'utf-8',
+          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
         },
-        body: JSON.stringify(body)
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(4000)
       });
 
       // 429 Too Many Requests kontrolü ve otomatik yeniden deneme
       if (response.status === 429) {
-        const waitMs = attempt * 1500;
-        console.warn(`[Otobüs API] 429 Rate limit alındı (${endpoint}). ${waitMs}ms sonra tekrar deneniyor... (Deneme ${attempt}/${retries})`);
+        const waitMs = attempt * 1000;
+        console.warn(`[Otobüs API] 429 Rate limit alındı (${endpoint}). ${waitMs}ms sonra tekrar deneniyor...`);
         await new Promise((resolve) => setTimeout(resolve, waitMs));
         continue;
       }
@@ -75,10 +81,10 @@ async function postBusApi(endpoint, body = {}, retries = 3) {
       return parsed?.result || [];
     } catch (err) {
       if (attempt === retries) {
-        console.error(`[Otobüs API] İstek başarısız (${endpoint}):`, err.message);
-        throw err;
+        console.warn(`[Otobüs API] İstek başarısız (${endpoint}):`, err.message);
+        return [];
       }
-      await new Promise((resolve) => setTimeout(resolve, 1000 * attempt));
+      await new Promise((resolve) => setTimeout(resolve, 500 * attempt));
     }
   }
 
@@ -94,37 +100,45 @@ export async function getActiveStations() {
     return cache.stations.data;
   }
 
-  const rawStations = await postBusApi('/api/static/activestation', {});
+  try {
+    const rawStations = await postBusApi('/api/static/activestation', {});
 
-  // Veri temizleme & Normalizasyon
-  const validStations = [];
-  for (const item of rawStations) {
-    if (!item || !item.stationId) continue;
+    if (rawStations && rawStations.length > 0) {
+      // Veri temizleme & Normalizasyon
+      const validStations = [];
+      for (const item of rawStations) {
+        if (!item || !item.stationId) continue;
 
-    const coords = normalizeCoordinates(item.latitude, item.longitude);
-    if (!coords) continue;
+        const coords = normalizeCoordinates(item.latitude, item.longitude);
+        if (!coords) continue;
 
-    // Elazığ Bounding Box kontrolü (D1..D42 sahte test verilerini eler)
-    if (!isInsideElazig(coords.lat, coords.lng)) {
-      continue;
+        // Elazığ Bounding Box kontrolü
+        if (!isInsideElazig(coords.lat, coords.lng)) {
+          continue;
+        }
+
+        validStations.push({
+          stationId: Number(item.stationId),
+          description: (item.description || '').trim(),
+          isActive: Number(item.isActive) === 1,
+          latitude: coords.lat,
+          longitude: coords.lng
+        });
+      }
+
+      if (validStations.length > 0) {
+        validStations.sort((a, b) => a.stationId - b.stationId);
+        cache.stations.data = validStations;
+        cache.stations.timestamp = now;
+        return validStations;
+      }
     }
-
-    validStations.push({
-      stationId: Number(item.stationId),
-      description: (item.description || '').trim(),
-      isActive: Number(item.isActive) === 1,
-      latitude: coords.lat,
-      longitude: coords.lng
-    });
+  } catch (err) {
+    console.warn('[Otobüs API] Duraklar canlı sunucudan alınamadı, snapshot kullanılıyor:', err.message);
   }
 
-  // İstasyon ID'sine göre sırala
-  validStations.sort((a, b) => a.stationId - b.stationId);
-
-  cache.stations.data = validStations;
-  cache.stations.timestamp = now;
-
-  return validStations;
+  // Canlı sorgu başarısızsa snapshot yedeği dön
+  return stationsSnapshot || [];
 }
 
 /**

@@ -104,6 +104,127 @@ function formatEpochDate(epochMs) {
   }
 }
 
+export function normalizeTurkishText(text) {
+  if (!text) return '';
+  return String(text)
+    .replace(/İ/g, 'i')
+    .replace(/I/g, 'ı')
+    .replace(/Ğ/g, 'ğ')
+    .replace(/Ü/g, 'ü')
+    .replace(/Ş/g, 'ş')
+    .replace(/Ö/g, 'ö')
+    .replace(/Ç/g, 'ç')
+    .toLowerCase()
+    .trim()
+    .replace(/\s+/g, ' ');
+}
+
+export function normalizeNeighborhoodName(name) {
+  if (!name) return '';
+  const clean = String(name).trim().toLocaleUpperCase('tr-TR');
+  
+  const map = {
+    'DOĞU KENT': 'DOĞUKENT',
+    'ABDULLAH PAŞA': 'ABDULLAHPAŞA',
+    'YENİ MAHALLE': 'YENİMAHALLE',
+    'KIRKLAR': 'KIRKLAR',
+    'ÇAYDA ÇIRA': 'ÇAYDAÇIRA',
+    'İZZET PAŞA': 'İZZETPAŞA',
+    'RÜSTEM PAŞA': 'RÜSTEMPAŞA',
+    'MUSTAFA PAŞA': 'MUSTAFAPAŞA',
+    'SARAY ATİK': 'SARAYATİK'
+  };
+
+  return map[clean] || clean;
+}
+
+export function buildTurkishFuzzyTerms(text) {
+  if (!text) return [];
+  const raw = String(text).trim();
+  if (!raw) return [];
+
+  const upperTr = raw.toLocaleUpperCase('tr-TR');
+  const upperEn = raw
+    .toUpperCase()
+    .replace(/İ/g, 'I')
+    .replace(/Ğ/g, 'G')
+    .replace(/Ü/g, 'U')
+    .replace(/Ş/g, 'S')
+    .replace(/Ö/g, 'O')
+    .replace(/Ç/g, 'C');
+
+  const trFromEn = raw
+    .toUpperCase()
+    .replace(/C/g, 'Ç')
+    .replace(/S/g, 'Ş')
+    .replace(/G/g, 'Ğ')
+    .replace(/I/g, 'İ')
+    .replace(/O/g, 'Ö')
+    .replace(/U/g, 'Ü');
+
+  const terms = new Set([raw, upperTr, upperEn, trFromEn]);
+
+  const lowerNorm = normalizeTurkishText(raw);
+  
+  if (lowerNorm.includes('cayda') || lowerNorm.includes('çık') || lowerNorm.includes('çıra')) {
+    terms.add('ÇAYDAÇIRA');
+    terms.add('ÇAYDA ÇIRA');
+    terms.add('CAYDACİRA');
+    terms.add('CAYDAÇIRA');
+    terms.add('ÇAYDACİRA');
+  }
+  if (lowerNorm.includes('dogu') || lowerNorm.includes('doğu')) {
+    terms.add('DOĞUKENT');
+    terms.add('DOĞU KENT');
+    terms.add('DOGUKENT');
+  }
+  if (lowerNorm.includes('abdullah')) {
+    terms.add('ABDULLAH PAŞA');
+    terms.add('ABDULLAHPAŞA');
+    terms.add('ABDULLAHPASA');
+  }
+  if (lowerNorm.includes('salı') || lowerNorm.includes('sali')) {
+    terms.add('SALIBABA');
+    terms.add('SALI BABA');
+    terms.add('SALİ BABA');
+  }
+  if (lowerNorm.includes('fevzi')) {
+    terms.add('FEVZİ ÇAKMAK');
+    terms.add('FEVZİÇAKMAK');
+    terms.add('FEVZICAKMAK');
+  }
+  if (lowerNorm.includes('rüstem') || lowerNorm.includes('rustem')) {
+    terms.add('RÜSTEM PAŞA');
+    terms.add('RÜSTEMPAŞA');
+    terms.add('RUSTEMPASA');
+  }
+  if (lowerNorm.includes('mustafa')) {
+    terms.add('MUSTAFA PAŞA');
+    terms.add('MUSTAFAPAŞA');
+    terms.add('MUSTAFAPASA');
+  }
+  if (lowerNorm.includes('izzet')) {
+    terms.add('İZZET PAŞA');
+    terms.add('İZZETPAŞA');
+    terms.add('İZZETPASA');
+  }
+  if (lowerNorm.includes('saray')) {
+    terms.add('SARAY ATİK');
+    terms.add('SARAYATİK');
+    terms.add('SARAYATIK');
+  }
+  if (lowerNorm.includes('yeni')) {
+    terms.add('YENİ MAHALLE');
+    terms.add('YENİMAHALLE');
+  }
+  if (lowerNorm.includes('guney') || lowerNorm.includes('güney')) {
+    terms.add('GÜNEYKENT');
+    terms.add('GÜNEY KENT');
+  }
+
+  return Array.from(terms).filter(Boolean);
+}
+
 async function fetchJson(endpoint, options = {}) {
   const res = await fetch(`${API_BASE}${endpoint}`, {
     headers: {
@@ -423,51 +544,92 @@ export async function fetchNeighborhoods(includeGeom = true) {
 }
 
 export async function searchAddress({ query = '', mahalle = '', csbm = '', limit = 25 }) {
+  // 1. Önce backend endpoint'ini dene
   try {
-    const params = new URLSearchParams({ query, mahalle, csbm, limit: String(limit) });
+    const params = new URLSearchParams();
+    if (query) params.append('query', query);
+    if (mahalle) params.append('mahalle', mahalle);
+    if (csbm) params.append('csbm', csbm);
+    params.append('limit', String(limit));
+
     const res = await fetchJson(`/cbs/search/address?${params.toString()}`);
-    return res.data || [];
-  } catch {
-    // Canlı ArcGIS JSONP ile doğrudan arama
-    const whereClauses = ['1=1'];
-    if (mahalle) whereClauses.push(`mahalle LIKE '%${mahalle.replace(/'/g, "''")}%'`);
-    if (csbm) whereClauses.push(`csbm LIKE '%${csbm.replace(/'/g, "''")}%'`);
-    if (query) whereClauses.push(`(ad LIKE '%${query.replace(/'/g, "''")}%' OR csbm LIKE '%${query.replace(/'/g, "''")}%')`);
-
-    try {
-      const data = await fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/7/query`, {
-        where: whereClauses.join(' AND '),
-        outFields: '*',
-        returnGeometry: 'true',
-        resultRecordCount: limit
-      });
-
-      return (data.features || []).map((f) => {
-        const attr = f.attributes || {};
-        const geom = f.geometry || {};
-        return {
-          objectid: attr.objectid,
-          ad: attr.ad || `${attr.csbm || ''} No: ${attr.tasarimkapino || ''}`.trim(),
-          mahalle: (attr.mahalle || '').trim(),
-          csbm: (attr.csbm || '').trim(),
-          kapiNo: (attr.tasarimkapino || '').trim(),
-          meskenSayisi: attr.toplam_mesken_sayisi || 0,
-          isyeriSayisi: attr.toplam_is_yeri_sayisi || 0,
-          kapiTur: attr.kapi_tur || '-',
-          kapiKullanim: attr.kapi_kullanim || '-',
-          guncellemeTarihi: formatEpochDate(attr.guncelleme_tarihi),
-          latitude: geom.y,
-          longitude: geom.x
-        };
-      });
-    } catch {
-      return [];
+    if (res && res.data && res.data.length > 0) {
+      return res.data;
     }
+  } catch {
+    // Backend hata verirse veya Vercel'de sunucu engelliyse doğrudan tarayıcıdan canlı ArcGIS JSONP sorgula
+  }
+
+  // 2. Canlı ArcGIS JSONP ile doğrudan arama (CORS engelsiz & Türkçe Karakter Destekli)
+  const whereClauses = ['1=1'];
+
+  if (mahalle && mahalle.trim()) {
+    const terms = buildTurkishFuzzyTerms(mahalle);
+    if (terms.length > 0) {
+      const mahalleClauses = terms.map((t) => `mahalle LIKE '%${t.replace(/'/g, "''")}%'`);
+      whereClauses.push(`(${mahalleClauses.join(' OR ')})`);
+    }
+  }
+
+  if (csbm && csbm.trim()) {
+    const terms = buildTurkishFuzzyTerms(csbm);
+    if (terms.length > 0) {
+      const csbmClauses = terms.map((t) => `csbm LIKE '%${t.replace(/'/g, "''")}%'`);
+      whereClauses.push(`(${csbmClauses.join(' OR ')})`);
+    }
+  }
+
+  if (query && query.trim()) {
+    const terms = buildTurkishFuzzyTerms(query);
+    const qClauses = [];
+    terms.forEach((t) => {
+      const escaped = t.replace(/'/g, "''");
+      qClauses.push(`ad LIKE '%${escaped}%'`);
+      qClauses.push(`csbm LIKE '%${escaped}%'`);
+      qClauses.push(`tasarimkapino LIKE '%${escaped}%'`);
+      qClauses.push(`numarataj_tasarim LIKE '%${escaped}%'`);
+    });
+    if (qClauses.length > 0) {
+      whereClauses.push(`(${qClauses.join(' OR ')})`);
+    }
+  }
+
+  try {
+    const data = await fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/7/query`, {
+      where: whereClauses.join(' AND '),
+      outFields: '*',
+      returnGeometry: 'true',
+      resultRecordCount: limit
+    });
+
+    return (data.features || []).map((f) => {
+      const attr = f.attributes || {};
+      const geom = f.geometry || {};
+      const kapiNo = (attr.tasarimkapino || attr.numarataj_tasarim || '').trim();
+
+      return {
+        objectid: attr.objectid,
+        ad: attr.ad || `${attr.csbm || ''} No: ${kapiNo}`.trim(),
+        mahalle: (attr.mahalle || '').trim(),
+        csbm: (attr.csbm || '').trim(),
+        kapiNo,
+        meskenSayisi: attr.toplam_mesken_sayisi || 0,
+        isyeriSayisi: attr.toplam_is_yeri_sayisi || 0,
+        kapiTur: attr.kapi_tur || '-',
+        kapiKullanim: attr.kapi_kullanim || '-',
+        guncellemeTarihi: formatEpochDate(attr.guncelleme_tarihi),
+        latitude: geom.y !== undefined ? geom.y : null,
+        longitude: geom.x !== undefined ? geom.x : null
+      };
+    });
+  } catch {
+    return [];
   }
 }
 export const searchAddresses = searchAddress;
 
 export async function searchBuilding({ objectid, mahalle, ada, parsel, limit = 10 }) {
+  // 1. Önce backend endpoint'ini dene
   try {
     const params = new URLSearchParams();
     if (objectid) params.append('objectid', String(objectid));
@@ -477,56 +639,74 @@ export async function searchBuilding({ objectid, mahalle, ada, parsel, limit = 1
     params.append('limit', String(limit));
 
     const res = await fetchJson(`/cbs/search/building?${params.toString()}`);
-    return res.data || [];
-  } catch {
-    const whereClauses = [];
-    if (objectid) whereClauses.push(`objectid = ${Number(objectid)}`);
-    if (mahalle) whereClauses.push(`mahalle_adi LIKE '%${mahalle.replace(/'/g, "''")}%'`);
-    if (ada) whereClauses.push(`adano = '${ada.replace(/'/g, "''")}'`);
-    if (parsel) whereClauses.push(`parselno = '${parsel.replace(/'/g, "''")}'`);
-    if (whereClauses.length === 0) whereClauses.push('1=1');
-
-    try {
-      const data = await fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/8/query`, {
-        where: whereClauses.join(' AND '),
-        outFields: '*',
-        returnGeometry: 'true',
-        resultRecordCount: limit
-      });
-
-      return (data.features || []).map((f) => {
-        const attr = f.attributes || {};
-        const geom = f.geometry || {};
-        let rings = [];
-        if (geom.rings && Array.isArray(geom.rings)) {
-          rings = geom.rings.map((ring) => ring.map((pt) => [pt[1], pt[0]]));
-        }
-
-        return {
-          objectid: attr.objectid,
-          ad: attr.ad || `Bina (Ada: ${attr.adano || '-'} / Parsel: ${attr.parselno || '-'})`,
-          mahalle: (attr.mahalle_adi || '').trim(),
-          adaNo: attr.adano || '-',
-          parselNo: attr.parselno || '-',
-          paftaAdi: attr.paftaadi || '-',
-          zeminUstuKat: attr.zeminustukatsayisi !== null && attr.zeminustukatsayisi !== undefined ? Number(attr.zeminustukatsayisi) : '-',
-          zeminAltiKat: attr.zeminaltikatsayisi !== null && attr.zeminaltikatsayisi !== undefined ? Number(attr.zeminaltikatsayisi) : '-',
-          meskenSayisi: attr.toplam_mesken || 0,
-          isyeriSayisi: attr.toplam_isyeri || 0,
-          yapiSinifi: attr.yapi_sinifi || '-',
-          asansor: attr.asansor || (attr.asansor_sayisi ? 'Var' : '-'),
-          otopark: attr.otopark || '-',
-          disCephe: attr.dis_cephe_kaplama || '-',
-          yapimYili: attr.yapim_yili || '-',
-          guncellemeTarihi: formatEpochDate(attr.guncelleme_tarihi),
-          tabanAlaniM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
-          geometryRings: rings,
-          photos: []
-        };
-      });
-    } catch {
-      return [];
+    if (res && res.data && res.data.length > 0) {
+      return res.data;
     }
+  } catch {
+    // Doğrudan JSONP ile devam et
+  }
+
+  // 2. Canlı ArcGIS JSONP ile doğrudan arama
+  const whereClauses = [];
+  if (objectid) {
+    whereClauses.push(`objectid = ${Number(objectid)}`);
+  } else {
+    if (mahalle && mahalle.trim()) {
+      const terms = buildTurkishFuzzyTerms(mahalle);
+      if (terms.length > 0) {
+        const mClauses = terms.map((t) => `mahalle_adi LIKE '%${t.replace(/'/g, "''")}%'`);
+        whereClauses.push(`(${mClauses.join(' OR ')})`);
+      }
+    }
+    if (ada && ada.trim()) {
+      whereClauses.push(`adano = '${ada.trim().replace(/'/g, "''")}'`);
+    }
+    if (parsel && parsel.trim()) {
+      whereClauses.push(`parselno = '${parsel.trim().replace(/'/g, "''")}'`);
+    }
+  }
+  if (whereClauses.length === 0) whereClauses.push('1=1');
+
+  try {
+    const data = await fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/8/query`, {
+      where: whereClauses.join(' AND '),
+      outFields: '*',
+      returnGeometry: 'true',
+      resultRecordCount: limit
+    });
+
+    return (data.features || []).map((f) => {
+      const attr = f.attributes || {};
+      const geom = f.geometry || {};
+      let rings = [];
+      if (geom.rings && Array.isArray(geom.rings)) {
+        rings = geom.rings.map((ring) => ring.map((pt) => [pt[1], pt[0]]));
+      }
+
+      return {
+        objectid: attr.objectid,
+        ad: attr.ad || `Bina (Ada: ${attr.adano || '-'} / Parsel: ${attr.parselno || '-'})`,
+        mahalle: (attr.mahalle_adi || '').trim(),
+        adaNo: attr.adano || '-',
+        parselNo: attr.parselno || '-',
+        paftaAdi: attr.paftaadi || '-',
+        zeminUstuKat: attr.zeminustukatsayisi !== null && attr.zeminustukatsayisi !== undefined ? Number(attr.zeminustukatsayisi) : '-',
+        zeminAltiKat: attr.zeminaltikatsayisi !== null && attr.zeminaltikatsayisi !== undefined ? Number(attr.zeminaltikatsayisi) : '-',
+        meskenSayisi: attr.toplam_mesken || 0,
+        isyeriSayisi: attr.toplam_isyeri || 0,
+        yapiSinifi: attr.yapi_sinifi || '-',
+        asansor: attr.asansor || (attr.asansor_sayisi ? 'Var' : '-'),
+        otopark: attr.otopark || '-',
+        disCephe: attr.dis_cephe_kaplama || '-',
+        yapimYili: attr.yapim_yili || '-',
+        guncellemeTarihi: formatEpochDate(attr.guncelleme_tarihi),
+        tabanAlaniM2: attr.Shape__Area ? Math.round(Number(attr.Shape__Area)) : null,
+        geometryRings: rings,
+        photos: []
+      };
+    });
+  } catch {
+    return [];
   }
 }
 export const searchBuildings = searchBuilding;
