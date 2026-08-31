@@ -4,6 +4,7 @@
 
 **Elazığ Belediyesi'nin iki bağımsız kamu veri altyapısını tek bir modern, hızlı ve interaktif platformda birleştiren açık kaynak Kent Bilgi ve Canlı Toplu Taşıma Sistemi.**
 
+[![Live Demo](https://img.shields.io/badge/Live_Demo-GitHub_Pages-2ea44f?style=for-the-badge&logo=githubpages&logoColor=white)](https://crowroser.github.io/elazig-sehir-bilgi-sistemi/)
 [![Node.js](https://img.shields.io/badge/Node.js-20.x%20%7C%2024.x-339933?style=for-the-badge&logo=nodedotjs&logoColor=white)](https://nodejs.org/)
 [![React](https://img.shields.io/badge/React-18.x-61DAFB?style=for-the-badge&logo=react&logoColor=black)](https://react.dev/)
 [![Vite](https://img.shields.io/badge/Vite-5.x-646CFF?style=for-the-badge&logo=vite&logoColor=white)](https://vitejs.dev/)
@@ -12,7 +13,7 @@
 [![OpenAPI / Swagger](https://img.shields.io/badge/Swagger-OpenAPI%203.0-85EA2D?style=for-the-badge&logo=swagger&logoColor=black)](http://localhost:3001/api-docs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
-[🌐 Canlı Demo](#-canlı-demo--önizleme) • [✨ Özellikler](#-temel-özellikler) • [📚 API Dokümantasyonu (Swagger)](#-api-dokümantasyonu-ve-swagger-ui) • [🚀 Kurulum & Çalıştırma](#-hızlı-kurulum) • [🏗️ Mimari](#️-sistem-mimarisi)
+[🌐 Canlı Demo: crowroser.github.io/elazig-sehir-bilgi-sistemi](https://crowroser.github.io/elazig-sehir-bilgi-sistemi/) • [✨ Özellikler](#-temel-özellikler) • [📚 API Dokümantasyonu (Swagger)](#-api-dokümantasyonu-ve-swagger-ui) • [🚀 Kurulum & Çalıştırma](#-hızlı-kurulum) • [🏗️ Mimari](#️-sistem-mimarisi)
 
 </div>
 
