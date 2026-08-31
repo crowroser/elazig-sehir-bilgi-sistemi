@@ -9,17 +9,17 @@ export default function StatusModal({ isOpen, onClose, healthData, onRefresh, lo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-in fade-in duration-200">
-      <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
+      <div className="relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden">
         
         {/* Modal Başlık */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-800/50">
+        <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-800/50">
           <div className="flex items-center gap-2">
             <Activity className="w-5 h-5 text-brand-400" />
             <h3 className="font-bold text-white text-base">Sistem & API Sağlık Durumu</h3>
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50 transition"
+            className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-700/50 transition"
           >
             <X className="w-5 h-5" />
           </button>
@@ -29,11 +29,11 @@ export default function StatusModal({ isOpen, onClose, healthData, onRefresh, lo
         <div className="p-6 space-y-4">
           
           {/* Servis 1: Elazığ Kart (Otobüs) */}
-          <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/60 space-y-2">
+          <div className="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700/60 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Server className="w-4 h-4 text-brand-400" />
-                <span className="font-semibold text-sm text-slate-200">Elazığ Kart Ulaşım API</span>
+                <span className="font-semibold text-sm text-zinc-200">Elazığ Kart Ulaşım API</span>
               </div>
               <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
                 busApi?.status === 'healthy'
@@ -53,22 +53,31 @@ export default function StatusModal({ isOpen, onClose, healthData, onRefresh, lo
                 )}
               </span>
             </div>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-zinc-400">
               Uç Nokta: <code className="text-brand-300">https://elazigkart.elazig.bel.tr</code>
             </p>
-            <div className="text-[11px] text-slate-400 bg-slate-900/60 p-2 rounded-lg space-y-1">
-              <div>✅ Mojibake (Windows-1254) fallback dekoderi devrede</div>
-              <div>✅ 429 Rate-limit koruması ve otomatik retry kuyruğu aktif</div>
-              <div>✅ 1.280+ durak ve anlık GPS verisi normalizasyonu aktif</div>
+            <div className="text-[11px] text-zinc-400 bg-zinc-900/60 p-2 rounded-lg space-y-1">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> 
+                Mojibake (Windows-1254) fallback dekoderi devrede
+              </div>
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> 
+                429 Rate-limit koruması ve otomatik retry kuyruğu aktif
+              </div>
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> 
+                1.280+ durak ve anlık GPS verisi normalizasyonu aktif
+              </div>
             </div>
           </div>
 
           {/* Servis 2: Elazığ CBS (ArcGIS) */}
-          <div className="p-4 rounded-xl bg-slate-800/60 border border-slate-700/60 space-y-2">
+          <div className="p-4 rounded-xl bg-zinc-800/60 border border-zinc-700/60 space-y-2">
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
-                <Database className="w-4 h-4 text-amber-400" />
-                <span className="font-semibold text-sm text-slate-200">Elazığ CBS (ArcGIS Enterprise)</span>
+                <Database className="w-4 h-4 text-amber-500" />
+                <span className="font-semibold text-sm text-zinc-200">Elazığ CBS (ArcGIS Enterprise)</span>
               </div>
               <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
                 cbsApi?.status === 'healthy'
@@ -88,13 +97,22 @@ export default function StatusModal({ isOpen, onClose, healthData, onRefresh, lo
                 )}
               </span>
             </div>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-zinc-400">
               Uç Nokta: <code className="text-amber-300">https://cbs.elazig.bel.tr</code>
             </p>
-            <div className="text-[11px] text-slate-400 bg-slate-900/60 p-2 rounded-lg space-y-1">
-              <div>✅ 130 Acil Toplanma Alanı WGS84 koordinatlarıyla bağlı</div>
-              <div>✅ 45 Mahalle polygon sınırları ve Muhtarlık rehberi aktif</div>
-              <div>✅ KVKK Koruma Kalkanı (Layer 12 kişisel verileri sansürlenmiştir)</div>
+            <div className="text-[11px] text-zinc-400 bg-zinc-900/60 p-2 rounded-lg space-y-1">
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> 
+                130 Acil Toplanma Alanı WGS84 koordinatlarıyla bağlı
+              </div>
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> 
+                45 Mahalle polygon sınırları ve Muhtarlık rehberi aktif
+              </div>
+              <div className="flex items-center gap-1.5">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" /> 
+                KVKK Koruma Kalkanı (Layer 12 kişisel verileri sansürlenmiştir)
+              </div>
             </div>
           </div>
 
@@ -109,8 +127,8 @@ export default function StatusModal({ isOpen, onClose, healthData, onRefresh, lo
         </div>
 
         {/* Modal Alt Çubuk */}
-        <div className="flex items-center justify-between px-6 py-3 border-t border-slate-800 bg-slate-800/30">
-          <span className="text-xs text-slate-500">
+        <div className="flex items-center justify-between px-6 py-3 border-t border-zinc-800 bg-zinc-800/30">
+          <span className="text-xs text-zinc-500">
             Son kontrol: {healthData?.timestamp ? new Date(healthData.timestamp).toLocaleTimeString('tr-TR') : '-'}
           </span>
           <button

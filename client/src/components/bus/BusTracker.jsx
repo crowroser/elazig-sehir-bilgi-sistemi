@@ -15,7 +15,9 @@ import {
   Accessibility,
   ArrowRightLeft,
   Calendar,
-  AlertCircle
+  AlertCircle,
+  X,
+  User
 } from 'lucide-react';
 import {
   fetchAllStations,
@@ -36,15 +38,17 @@ export default function BusTracker({
   selectedStationFromMap,
   onUserLocationFound
 }) {
-  // State: Duraklar
+  // State: Durak Arama ve Seçimi
   const [stations, setStations] = useState([]);
   const [stationSearch, setStationSearch] = useState('');
   const [filteredStations, setFilteredStations] = useState([]);
   const [selectedStation, setSelectedStation] = useState(null);
-  const [nearestStations, setNearestStations] = useState([]);
+  
+  // State: Konum
   const [isLocating, setIsLocating] = useState(false);
+  const [nearestStations, setNearestStations] = useState([]);
 
-  // State: Hat ve Canlı Veri
+  // State: Duraktan Geçen Hatlar ve Kalan Süreler
   const [stationLines, setStationLines] = useState([]);
   const [loadingLines, setLoadingLines] = useState(false);
   const [selectedRouteCode, setSelectedRouteCode] = useState(null);
@@ -97,7 +101,7 @@ export default function BusTracker({
     setFilteredStations(matches.slice(0, 15));
   }, [stationSearch, stations]);
 
-  // 2. "Bana En Yakın Durak" Butonu
+  // 2. Kullanıcı Konumu (GPS) Al
   const handleFindNearest = () => {
     if (!navigator.geolocation) {
       alert('Tarayıcınız konum servisini desteklemiyor.');
@@ -141,10 +145,10 @@ export default function BusTracker({
     setLoadingLines(true);
     try {
       const lines = await fetchStationRemaining(station.stationId);
-      setStationLines(lines);
+      setStationLines(lines || []);
 
       // İlk hattı otomatik seç
-      if (lines.length > 0) {
+      if (lines && lines.length > 0) {
         handleSelectRoute(lines[0].busLineCode);
       } else {
         setSelectedRouteCode(null);
@@ -166,13 +170,13 @@ export default function BusTracker({
 
     try {
       const overview = await fetchRouteOverview(routeCode, dir);
-      setRouteOverview(overview);
+      setRouteOverview(overview || {});
 
       if (onBusesUpdated) {
-        onBusesUpdated(overview.buses || []);
+        onBusesUpdated(overview?.buses || []);
       }
       if (onRouteCoordinatesUpdated) {
-        onRouteCoordinatesUpdated(overview.coordinates || null);
+        onRouteCoordinatesUpdated(overview?.coordinates || null);
       }
     } catch (err) {
       console.error('Hat detayları alınamadı:', err);
@@ -197,86 +201,89 @@ export default function BusTracker({
     }, 1000);
 
     return () => clearInterval(timer);
-  }, [autoRefresh, selectedRouteCode]);
+  }, [autoRefresh, selectedRouteCode, direction]);
 
-  // Canlı Otobüsleri Yenileme
   const refreshLiveBuses = async () => {
     if (!selectedRouteCode) return;
     setIsRefreshing(true);
     try {
-      const buses = await fetchRealtimeBuses(selectedRouteCode);
-      setRouteOverview((prev) => (prev ? { ...prev, buses } : { buses }));
-      if (onBusesUpdated) onBusesUpdated(buses);
+      const overview = await fetchRouteOverview(selectedRouteCode, direction);
+      setRouteOverview(overview || {});
+      if (onBusesUpdated) {
+        onBusesUpdated(overview?.buses || []);
+      }
     } catch (err) {
-      console.warn('Canlı otobüs yenilenemedi:', err);
+      console.error('Canlı veri yenileme hatası:', err);
     } finally {
       setIsRefreshing(false);
     }
   };
 
-  // Yön Değiştirme (Gidiş / Dönüş)
   const toggleDirection = () => {
-    const nextDir = direction === 'G' ? 'D' : 'G';
-    setDirection(nextDir);
+    const newDir = direction === 'G' ? 'D' : 'G';
+    setDirection(newDir);
     if (selectedRouteCode) {
-      handleSelectRoute(selectedRouteCode, nextDir);
+      handleSelectRoute(selectedRouteCode, newDir);
     }
   };
 
   return (
     <div className="flex flex-col h-full space-y-4">
       
-      {/* 1. Üst Kontrol Paneli: Durak Arama & En Yakın Butonu */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
-          
-          {/* Arama Input */}
+      {/* 1. Üst Başlık ve Durak Arama */}
+      <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 shadow-xl space-y-3 shrink-0">
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-2.5">
+            <div className="w-10 h-10 rounded-xl bg-brand-500/20 text-brand-400 flex items-center justify-center font-bold border border-brand-500/30">
+              <Bus className="w-5 h-5" />
+            </div>
+            <div>
+              <h2 className="font-extrabold text-base text-white tracking-tight">
+                Canlı Otobüs Takip
+              </h2>
+              <p className="text-xs text-zinc-400">
+                1.286 durak & 82 aktif hat (Elazığ Kart)
+              </p>
+            </div>
+          </div>
+        </div>
+
+        <div className="relative z-10 flex gap-2">
           <div className="relative flex-1">
-            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-zinc-400" />
             <input
               type="text"
               value={stationSearch}
               onChange={(e) => setStationSearch(e.target.value)}
-              placeholder="Durak adı veya No ile ara (ör: 701 veya Valilik)..."
-              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-slate-800/90 border border-slate-700 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-brand-500 transition"
+              placeholder="Durak adı veya no ara..."
+              className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-zinc-800 border border-zinc-700 text-sm text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-brand-500 shadow-inner"
             />
-            {stationSearch && (
-              <button
-                onClick={() => setStationSearch('')}
-                className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-slate-400 hover:text-white"
-              >
-                ✕
-              </button>
-            )}
-
-            {/* Arama Sonuç Dropdown */}
+            
+            {/* Arama Sonuçları Dropdown */}
             {filteredStations.length > 0 && (
-              <div className="absolute left-0 right-0 top-full mt-2 z-50 bg-slate-900 border border-slate-700 rounded-xl shadow-2xl overflow-hidden max-h-64 overflow-y-auto">
+              <div className="absolute w-full mt-2 bg-zinc-800 border border-zinc-700 rounded-xl shadow-2xl overflow-hidden max-h-60 overflow-y-auto">
                 {filteredStations.map((st) => (
-                  <div
+                  <button
                     key={st.stationId}
                     onClick={() => handleSelectStation(st)}
-                    className="p-3 hover:bg-slate-800 border-b border-slate-800/80 cursor-pointer flex items-center justify-between text-xs transition"
+                    className="w-full px-4 py-2.5 text-left hover:bg-zinc-700 transition flex items-center justify-between border-b border-zinc-700/50 last:border-0"
                   >
-                    <div>
-                      <span className="font-bold text-white block">{st.description}</span>
-                      <span className="text-slate-400">Durak No: {st.stationId}</span>
-                    </div>
-                    <ChevronRight className="w-4 h-4 text-slate-500" />
-                  </div>
+                    <span className="text-xs font-bold text-white">{st.description}</span>
+                    <span className="text-[10px] text-zinc-400 font-mono bg-zinc-900 px-1.5 py-0.5 rounded">No: {st.stationId}</span>
+                  </button>
                 ))}
               </div>
             )}
           </div>
-
-          {/* En Yakın Durak Butonu */}
+          
           <button
             onClick={handleFindNearest}
             disabled={isLocating}
-            className="flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white text-xs sm:text-sm font-bold shadow-lg shadow-brand-600/25 transition shrink-0 disabled:opacity-50"
+            className="px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs transition shadow-lg shadow-brand-500/20 flex items-center gap-1.5 disabled:opacity-50 shrink-0"
+            title="GPS ile en yakın durağı bul"
           >
             <Navigation className={`w-4 h-4 ${isLocating ? 'animate-spin' : ''}`} />
-            <span>{isLocating ? 'Konum Alınıyor...' : 'En Yakın Durak'}</span>
+            <span className="hidden sm:inline">{isLocating ? 'Konum Alınıyor...' : 'En Yakın Durak'}</span>
           </button>
         </div>
 
@@ -285,54 +292,54 @@ export default function BusTracker({
           <div className="flex items-center justify-between p-3 rounded-xl bg-brand-950/40 border border-brand-800/50">
             <div className="flex items-center gap-2.5">
               <div className="w-8 h-8 rounded-lg bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-sm border border-amber-500/30">
-                🚏
+                <MapPin className="w-4 h-4" />
               </div>
               <div>
                 <div className="flex items-center gap-2">
                   <span className="text-xs font-bold text-white">{selectedStation.description}</span>
-                  <span className="px-1.5 py-0.2 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                  <span className="px-1.5 py-0.5 rounded text-[10px] font-mono font-bold bg-amber-500/20 text-amber-300 border border-amber-500/30">
                     No: {selectedStation.stationId}
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-400">
-                  {selectedStation.latitude.toFixed(4)}, {selectedStation.longitude.toFixed(4)}
+                <p className="text-[11px] text-zinc-400 mt-0.5">
+                  {Number(selectedStation.latitude).toFixed(4)}, {Number(selectedStation.longitude).toFixed(4)}
                 </p>
               </div>
             </div>
             {selectedStation.distanceText && (
-              <span className="text-xs font-bold text-emerald-400 bg-emerald-500/10 px-2.5 py-1 rounded-lg border border-emerald-500/20">
-                📍 {selectedStation.distanceText}
+              <span className="text-[11px] font-bold text-emerald-400 bg-emerald-500/10 px-2 py-1 rounded-lg border border-emerald-500/20 flex items-center gap-1">
+                <Navigation className="w-3.5 h-3.5" /> {selectedStation.distanceText}
               </span>
             )}
           </div>
         ) : (
-          <div className="p-3 rounded-xl bg-slate-800/40 border border-slate-700/40 text-center text-xs text-slate-400">
-            💡 Haritadan bir durağa tıklayın veya yukarıdan arama yapın.
+          <div className="p-3 rounded-xl bg-zinc-800/40 border border-zinc-700/40 text-center text-xs text-zinc-400">
+            Haritadan bir durağa tıklayın veya yukarıdan arama yapın.
           </div>
         )}
       </div>
 
       {/* 2. Duraktan Geçen Hatlar Listesi (Kalan Süreler) */}
       {selectedStation && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-3">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 shadow-xl space-y-3 shrink-0">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Bus className="w-4 h-4 text-brand-400" />
               <h3 className="font-bold text-sm text-white">Bu Duraktan Geçen Hatlar</h3>
             </div>
-            <span className="text-xs text-slate-400">{stationLines.length} hat aktif</span>
+            <span className="text-xs text-zinc-400">{(stationLines || []).length} hat aktif</span>
           </div>
 
           {loadingLines ? (
-            <div className="py-6 text-center text-xs text-slate-400">Hatlar yükleniyor...</div>
-          ) : stationLines.length === 0 ? (
-            <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/40 text-center space-y-1">
-              <p className="text-xs font-semibold text-slate-300">Bu duraktan şu an aktif hat geçmiyor</p>
-              <p className="text-[11px] text-slate-500">Sefer saatleri dışında veya pasif durak olabilir.</p>
+            <div className="py-6 text-center text-xs text-zinc-400">Hatlar yükleniyor...</div>
+          ) : (stationLines || []).length === 0 ? (
+            <div className="p-4 rounded-xl bg-zinc-800/40 border border-zinc-700/40 text-center space-y-1">
+              <p className="text-xs font-semibold text-zinc-300">Bu duraktan şu an aktif hat geçmiyor</p>
+              <p className="text-[11px] text-zinc-500">Sefer saatleri dışında veya pasif durak olabilir.</p>
             </div>
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 max-h-48 overflow-y-auto pr-1">
-              {stationLines.map((line) => {
+              {(stationLines || []).map((line) => {
                 const isSelected = selectedRouteCode === line.busLineCode;
                 const hasArrival = line.remainingTimeCurr !== null && line.remainingTimeCurr !== undefined;
 
@@ -340,37 +347,38 @@ export default function BusTracker({
                   <div
                     key={line.busLineCode}
                     onClick={() => handleSelectRoute(line.busLineCode)}
-                    className={`p-3 rounded-xl border cursor-pointer transition-all duration-200 flex items-center justify-between ${
+                    className={`p-3 rounded-xl border cursor-pointer transition-all duration-200 flex items-center justify-between gap-2 ${
                       isSelected
                         ? 'bg-brand-600/20 border-brand-500 shadow-md ring-1 ring-brand-500'
-                        : 'bg-slate-800/60 border-slate-700/60 hover:bg-slate-800 hover:border-slate-600'
+                        : 'bg-zinc-800/60 border-zinc-700/60 hover:bg-zinc-800 hover:border-zinc-600'
                     }`}
                   >
-                    <div>
+                    <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-1.5">
-                        <span className="px-1.5 py-0.5 rounded bg-slate-900 text-brand-300 font-mono font-bold text-xs border border-slate-700">
+                        <span className="shrink-0 px-1.5 py-0.5 rounded bg-zinc-900 text-brand-300 font-mono font-bold text-xs border border-zinc-700">
                           {line.busLineShortName || line.busLineNo || '•'}
                         </span>
-                        <span className="font-bold text-xs text-white truncate max-w-[120px]">
+                        <span className="font-bold text-xs text-white truncate">
                           {line.busLineCode}
                         </span>
                       </div>
-                      <div className="flex items-center gap-2 mt-1 text-[10px] text-slate-400">
+                      <div className="flex items-center gap-2 mt-1 text-[10px] text-zinc-400">
                         {line.remainingTimeNext !== null && (
-                          <span>Sonraki: {line.remainingTimeNext} dk</span>
+                          <span className="truncate">Sonraki: {line.remainingTimeNext} dk</span>
                         )}
                       </div>
                     </div>
 
-                    <div className="text-right">
+                    <div className="text-right shrink-0">
                       {hasArrival ? (
                         <div className="inline-flex flex-col items-end">
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-xs border border-emerald-500/30">
+                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-400 font-bold text-xs border border-emerald-500/30 flex items-center gap-1 whitespace-nowrap">
+                            <Clock className="w-3 h-3 shrink-0" />
                             {line.remainingTimeCurr === 0 ? 'DURAKTA' : `${line.remainingTimeCurr} dk`}
                           </span>
                         </div>
                       ) : (
-                        <span className="text-[10px] text-slate-500">Canlı süre yok</span>
+                        <span className="text-[10px] text-zinc-500 whitespace-nowrap">Canlı süre yok</span>
                       )}
                     </div>
                   </div>
@@ -383,10 +391,10 @@ export default function BusTracker({
 
       {/* 3. Seçili Hat Canlı Takip & Detay Paneli */}
       {selectedRouteCode && (
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-xl space-y-4">
+        <div className="bg-zinc-900 border border-zinc-800 rounded-2xl p-4 shadow-xl space-y-4 flex-1 flex flex-col min-h-0">
           
           {/* Hat Başlığı & Kontroller */}
-          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-800 pb-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 border-b border-zinc-800 pb-3 shrink-0">
             <div className="flex items-center gap-2.5">
               <div className="w-9 h-9 rounded-xl bg-brand-600/30 text-brand-400 flex items-center justify-center font-bold border border-brand-500/30">
                 <Bus className="w-5 h-5" />
@@ -395,298 +403,294 @@ export default function BusTracker({
                 <h2 className="font-extrabold text-base text-white tracking-tight">
                   {selectedRouteCode}
                 </h2>
-                <div className="flex items-center gap-2 text-xs text-slate-400">
-                  <span>{routeOverview?.stops?.length || 0} Durak</span>
+                <div className="flex items-center gap-2 text-[11px] sm:text-xs text-zinc-400">
+                  <span className="font-semibold text-zinc-300">
+                    {(routeOverview?.buses || []).length} Otobüs Aktif
+                  </span>
                   <span>•</span>
-                  <span>{routeOverview?.buses?.length || 0} Canlı Araç</span>
+                  <span>{(routeOverview?.routeStops || []).length} Durak</span>
                 </div>
               </div>
             </div>
 
-            {/* Sağ Butonlar (Yön, Sefer, Ücret, Yenile) */}
-            <div className="flex items-center gap-1.5">
-              <button
-                onClick={toggleDirection}
-                title="Gidiş/Dönüş Değiştir"
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition"
-              >
-                <ArrowRightLeft className="w-3.5 h-3.5 text-brand-400" />
-                <span>{direction === 'G' ? 'Gidiş' : 'Dönüş'}</span>
-              </button>
-
-              <button
-                onClick={() => setShowScheduleModal(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition"
-              >
-                <Clock className="w-3.5 h-3.5 text-amber-400" />
-                <span className="hidden sm:inline">Saatler</span>
-              </button>
-
+            <div className="flex items-center gap-1.5 shrink-0">
               <button
                 onClick={() => setShowPriceModal(true)}
-                className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-xs font-semibold text-slate-200 border border-slate-700 transition"
+                className="p-2 rounded-xl bg-amber-500/10 text-amber-500 hover:bg-amber-500/20 border border-amber-500/20 transition"
+                title="Ücret Tarifesi"
               >
-                <Coins className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="hidden sm:inline">Ücret</span>
+                <Coins className="w-4 h-4" />
+              </button>
+              <button
+                onClick={() => setShowScheduleModal(true)}
+                className="p-2 rounded-xl bg-brand-600/10 text-brand-400 hover:bg-brand-600/20 border border-brand-500/20 transition"
+                title="Sefer Saatleri"
+              >
+                <Clock className="w-4 h-4" />
+              </button>
+              
+              <div className="h-6 w-px bg-zinc-700 mx-1"></div>
+
+              {/* Yön Değiştirici */}
+              <button
+                onClick={toggleDirection}
+                disabled={loadingRoute}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-zinc-800 border border-zinc-700 hover:bg-zinc-700 transition disabled:opacity-50 text-[11px] sm:text-xs font-bold"
+              >
+                <ArrowRightLeft className="w-3.5 h-3.5 text-brand-400" />
+                <span className="hidden sm:inline">{direction === 'G' ? 'Gidiş Yönü' : 'Dönüş Yönü'}</span>
               </button>
 
               <button
-                onClick={refreshLiveBuses}
-                disabled={isRefreshing}
-                title="Canlı Konumları Yenile"
-                className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 transition"
+                onClick={() => setAutoRefresh(!autoRefresh)}
+                className={`p-2 rounded-xl border transition ${
+                  autoRefresh
+                    ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/30'
+                    : 'bg-zinc-800 text-zinc-500 border-zinc-700'
+                }`}
+                title="Otomatik Yenileme (10sn)"
               >
-                <RefreshCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-brand-400' : ''}`} />
+                <RefreshCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin' : ''}`} />
               </button>
             </div>
           </div>
 
-          {/* Otomatik Yenileme Çubuğu */}
-          <div className="flex items-center justify-between text-[11px] text-slate-400 bg-slate-800/40 px-3 py-1.5 rounded-xl border border-slate-800">
-            <div className="flex items-center gap-2">
-              <span className="relative flex h-2 w-2">
-                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
-                <span className="relative inline-flex rounded-full h-2 w-2 bg-emerald-500"></span>
-              </span>
-              <span>Canlı Takip Aktif (Otomatik yenileme: {refreshCountdown}s)</span>
+          {loadingRoute ? (
+            <div className="py-12 text-center text-zinc-400 space-y-3">
+              <div className="w-8 h-8 rounded-full border-2 border-brand-500 border-t-transparent animate-spin mx-auto"></div>
+              <p className="text-xs">Hat verileri yükleniyor...</p>
             </div>
-            <button
-              onClick={() => setAutoRefresh(!autoRefresh)}
-              className="text-[10px] font-semibold text-brand-400 hover:underline"
-            >
-              {autoRefresh ? 'Durdur' : 'Başlat'}
-            </button>
-          </div>
-
-          {/* Canlı Otobüs Kartları */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-bold text-slate-300 flex items-center justify-between">
-              <span>Seferdeki Canlı Araçlar</span>
-              <span className="text-[11px] font-normal text-slate-500">
-                {routeOverview?.buses?.length || 0} araç hatta
-              </span>
-            </h4>
-
-            {loadingRoute ? (
-              <div className="py-6 text-center text-xs text-slate-400">Otobüs verisi alınıyor...</div>
-            ) : !routeOverview?.buses || routeOverview.buses.length === 0 ? (
-              /* ⚠️ Empty State: Kullanıcı Dostu Açıklama */
-              <div className="p-4 rounded-xl bg-slate-800/40 border border-slate-700/50 text-center space-y-1.5">
-                <AlertCircle className="w-6 h-6 text-amber-400 mx-auto" />
-                <p className="text-xs font-bold text-slate-200">
-                  Şu Anda Bu Hatta Canlı Otobüs Bulunmuyor
-                </p>
-                <p className="text-[11px] text-slate-400 max-w-sm mx-auto">
-                  Araçlar sefer saatini bekliyor olabilir veya GPS sinyali pasif durumda. Günlük sefer saatlerini inceleyebilirsiniz.
-                </p>
-                <button
-                  onClick={() => setShowScheduleModal(true)}
-                  className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600/30 hover:bg-brand-600/50 text-brand-300 text-xs font-semibold border border-brand-500/30 transition"
-                >
-                  <Calendar className="w-3.5 h-3.5" />
-                  <span>Sefer Saatlerini Gör</span>
-                </button>
+          ) : !routeOverview ? (
+            <div className="py-8 text-center text-xs text-zinc-400">
+              Hat verisi bulunamadı.
+            </div>
+          ) : (
+            <div className="flex flex-col flex-1 min-h-0 space-y-3">
+              
+              {/* Güzergah / Son Durak Bilgisi */}
+              <div className="px-3 py-2 rounded-xl bg-zinc-800/40 border border-zinc-700/40 flex items-center justify-between text-xs shrink-0">
+                <span className="text-zinc-400">Güzergah:</span>
+                <span className="font-bold text-white text-right max-w-[70%] truncate">
+                  {(routeOverview?.routeStops || []).length > 0 
+                    ? `${routeOverview.routeStops[0].durakAdi} ➔ ${routeOverview.routeStops[routeOverview.routeStops.length - 1].durakAdi}`
+                    : 'Bilinmiyor'}
+                </span>
               </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                {routeOverview.buses.map((bus) => (
-                  <div
-                    key={bus.plaka}
-                    className="p-3 rounded-xl bg-slate-800/70 border border-slate-700/70 shadow-sm space-y-2 hover:border-slate-600 transition"
-                  >
-                    {/* Üst Satır: Plaka & Durum */}
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-2">
-                        <div
-                          className="w-3 h-3 rounded-full border border-white/50"
-                          style={{ backgroundColor: bus.renk }}
-                        />
-                        <span className="font-mono font-extrabold text-sm text-white">
-                          {bus.plaka}
-                        </span>
-                      </div>
-                      <span
-                        className="px-2 py-0.5 rounded text-[10px] font-bold"
-                        style={{
-                          backgroundColor: `${bus.renk}25`,
-                          color: bus.renk,
-                          border: `1px solid ${bus.renk}60`
-                        }}
-                      >
-                        {bus.statusText}
-                      </span>
-                    </div>
 
-                    {/* Orta Satır: Metrikler */}
-                    <div className="grid grid-cols-3 gap-2 pt-1 border-t border-slate-700/60 text-center text-xs">
-                      <div className="bg-slate-900/60 p-1.5 rounded-lg">
-                        <div className="flex items-center justify-center gap-1 text-[10px] text-slate-400">
-                          <Gauge className="w-3 h-3" />
-                          <span>Hız</span>
-                        </div>
-                        <span className="font-bold text-white text-xs">{bus.hiz} km/s</span>
-                      </div>
+              {/* Canlı Otobüs Kartları */}
+              <div className="flex-1 overflow-y-auto pr-1 space-y-3">
+                <h3 className="font-bold text-sm text-white flex items-center gap-2 sticky top-0 bg-zinc-900 py-1 z-10">
+                  <span className="relative flex h-2 w-2">
+                    {(routeOverview?.buses || []).length > 0 && <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>}
+                    <span className={`relative inline-flex rounded-full h-2 w-2 ${(routeOverview?.buses || []).length > 0 ? 'bg-emerald-500' : 'bg-zinc-500'}`}></span>
+                  </span>
+                  Sahadaki Araçlar ({(routeOverview?.buses || []).length})
+                </h3>
 
-                      <div className="bg-slate-900/60 p-1.5 rounded-lg">
-                        <div className="flex items-center justify-center gap-1 text-[10px] text-slate-400">
-                          <Users className="w-3 h-3" />
-                          <span>Yolcu</span>
-                        </div>
-                        <span className="font-bold text-white text-xs">{bus.seferYolcu} kişi</span>
-                      </div>
-
-                      <div className="bg-slate-900/60 p-1.5 rounded-lg">
-                        <div className="flex items-center justify-center gap-1 text-[10px] text-slate-400">
-                          <Navigation className="w-3 h-3" />
-                          <span>Pusula</span>
-                        </div>
-                        <span className="font-bold text-white text-xs">{bus.yon}°</span>
-                      </div>
-                    </div>
-
-                    {/* Alt Satır: Sürücü & Donanım */}
-                    <div className="flex items-center justify-between text-[11px] text-slate-400 pt-1">
-                      <span className="truncate max-w-[140px]">👤 {bus.surucu}</span>
-                      <div className="flex items-center gap-2">
-                        {bus.klimaVarMi && (
-                          <span title="Klimalı Araç" className="text-sky-400">❄️ Klima</span>
-                        )}
-                        {bus.engelliUygunMu && (
-                          <span title="Engelli Erişimine Uygun" className="text-emerald-400">♿ Engelli</span>
-                        )}
-                      </div>
-                    </div>
+                {(routeOverview?.buses || []).length === 0 ? (
+                  <div className="p-6 rounded-xl bg-zinc-800/40 border border-zinc-700/40 text-center">
+                    <AlertCircle className="w-6 h-6 text-zinc-500 mx-auto mb-2 opacity-50" />
+                    <p className="text-sm font-semibold text-zinc-300">Şu an hatta aktif araç yok</p>
+                    <p className="text-xs text-zinc-500 mt-1">Sefer saatleri dışında veya araçlar henüz harekete geçmemiş olabilir.</p>
                   </div>
-                ))}
-              </div>
-            )}
-          </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 pb-2">
+                    {(routeOverview?.buses || []).map((bus) => (
+                      <div
+                        key={bus.plaka}
+                        className="p-3 rounded-xl bg-zinc-800/60 border border-zinc-700/60 hover:bg-zinc-800 hover:border-brand-500/40 transition-colors shadow-sm space-y-2"
+                      >
+                        {/* Üst Satır: Plaka ve Durum */}
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-3 h-3 rounded-full border border-white/50"
+                              style={{ backgroundColor: bus.renk }}
+                            />
+                            <span className="font-mono font-extrabold text-sm text-white">
+                              {bus.plaka}
+                            </span>
+                          </div>
+                          <span
+                            className="px-2 py-0.5 rounded text-[10px] font-bold"
+                            style={{
+                              backgroundColor: `${bus.renk}25`,
+                              color: bus.renk,
+                              border: `1px solid ${bus.renk}60`
+                            }}
+                          >
+                            {bus.statusText}
+                          </span>
+                        </div>
 
+                        {/* Orta Satır: Metrikler */}
+                        <div className="grid grid-cols-3 gap-2 pt-1 border-t border-zinc-700/60 text-center text-xs">
+                          <div className="bg-zinc-900/60 p-1.5 rounded-lg">
+                            <div className="flex items-center justify-center gap-1 text-[10px] text-zinc-400">
+                              <Gauge className="w-3 h-3" />
+                              <span>Hız</span>
+                            </div>
+                            <span className="font-bold text-white text-[11px] sm:text-xs">{bus.hiz} km/s</span>
+                          </div>
+
+                          <div className="bg-zinc-900/60 p-1.5 rounded-lg">
+                            <div className="flex items-center justify-center gap-1 text-[10px] text-zinc-400">
+                              <Users className="w-3 h-3" />
+                              <span>Yolcu</span>
+                            </div>
+                            <span className="font-bold text-white text-[11px] sm:text-xs">{bus.seferYolcu} kişi</span>
+                          </div>
+
+                          <div className="bg-zinc-900/60 p-1.5 rounded-lg">
+                            <div className="flex items-center justify-center gap-1 text-[10px] text-zinc-400">
+                              <Navigation className="w-3 h-3" />
+                              <span>Pusula</span>
+                            </div>
+                            <span className="font-bold text-white text-[11px] sm:text-xs">{bus.yon}°</span>
+                          </div>
+                        </div>
+
+                        {/* Doluluk Göstergesi */}
+                        <div className="pt-1">
+                          <div className="flex items-center justify-between text-[10px] text-zinc-400 mb-1">
+                            <span>Doluluk</span>
+                            <span className={`font-semibold ${
+                              (Number(bus.seferYolcu) || 0) < 15 ? 'text-emerald-400' : (Number(bus.seferYolcu) || 0) < 35 ? 'text-amber-400' : 'text-rose-400'
+                            }`}>
+                              {(Number(bus.seferYolcu) || 0) < 15 ? 'Boş' : (Number(bus.seferYolcu) || 0) < 35 ? 'Orta' : 'Kalabalık'}
+                            </span>
+                          </div>
+                          <div className="h-1.5 rounded-full bg-zinc-700 overflow-hidden">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                (Number(bus.seferYolcu) || 0) < 15 ? 'bg-emerald-500' : (Number(bus.seferYolcu) || 0) < 35 ? 'bg-amber-500' : 'bg-rose-500'
+                              }`}
+                              style={{ width: `${Math.min(((Number(bus.seferYolcu) || 0) / 50) * 100, 100)}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Alt Satır: Sürücü & Donanım */}
+                        <div className="flex items-center justify-between text-[11px] text-zinc-400 pt-1">
+                          <span className="truncate max-w-[140px]">
+                            <User className="w-3 h-3 inline mr-1" /> {bus.surucu}
+                          </span>
+                          <div className="flex items-center gap-2">
+                            {bus.klimaVarMi && (
+                              <span title="Klimalı Araç" className="text-sky-400"><span className="flex items-center gap-1"><Wind className="w-3 h-3" /> Klima</span></span>
+                            )}
+                            {bus.engelliUygunMu && (
+                              <span title="Engelli Erişimine Uygun" className="text-emerald-400"><span className="flex items-center gap-1"><Accessibility className="w-3 h-3" /> Engelli</span></span>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
         </div>
       )}
 
       {/* MODAL 1: Sefer Saatleri */}
       {showScheduleModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="relative w-full max-w-lg bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-lg bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden max-h-[85vh] flex flex-col">
             
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-800/50">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-800/50">
               <div className="flex items-center gap-2">
                 <Clock className="w-5 h-5 text-amber-400" />
                 <h3 className="font-bold text-white text-base">
                   {selectedRouteCode} Sefer Saatleri
                 </h3>
               </div>
-              <button
-                onClick={() => setShowScheduleModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50"
-              >
-                ✕
+              <button onClick={() => setShowScheduleModal(false)} className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-700/50 transition">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="p-6 overflow-y-auto space-y-4">
-              
-              {/* Sıradaki 3 Sefer */}
-              {routeOverview?.schedule?.nextTrips?.length > 0 && (
-                <div className="p-4 rounded-xl bg-amber-950/30 border border-amber-800/40 space-y-2">
-                  <span className="text-xs font-bold text-amber-400 uppercase tracking-wider block">
-                    ⚡ Sıradaki Kalkışlar
-                  </span>
-                  <div className="grid grid-cols-3 gap-2">
-                    {routeOverview.schedule.nextTrips.map((trip, idx) => (
-                      <div key={idx} className="bg-slate-900/80 p-2.5 rounded-lg text-center border border-amber-700/30">
-                        <span className="font-mono font-extrabold text-base text-amber-300 block">
-                          {trip.time}
+              <div className="flex gap-2 p-1 bg-zinc-800/60 border border-zinc-700/50 rounded-xl">
+                <button
+                  onClick={() => handleSelectRoute(selectedRouteCode, 'G')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${direction === 'G' ? 'bg-brand-600 text-white shadow' : 'text-zinc-400 hover:text-white'}`}
+                >
+                  Gidiş Yönü
+                </button>
+                <button
+                  onClick={() => handleSelectRoute(selectedRouteCode, 'D')}
+                  className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition ${direction === 'D' ? 'bg-brand-600 text-white shadow' : 'text-zinc-400 hover:text-white'}`}
+                >
+                  Dönüş Yönü
+                </button>
+              </div>
+
+              {loadingRoute ? (
+                <div className="py-8 text-center text-xs text-zinc-400">Yükleniyor...</div>
+              ) : (
+                <div className="space-y-4">
+                  <div>
+                    <h4 className="text-xs font-bold text-zinc-300 mb-2 border-b border-zinc-800 pb-1 flex items-center gap-1.5">
+                      <Navigation className="w-3 h-3 text-emerald-400" /> Yaklaşan Seferler
+                    </h4>
+                    <div className="flex flex-wrap gap-2">
+                      {(routeOverview?.schedule?.nextTrips || []).length > 0 ? (
+                        (routeOverview?.schedule?.nextTrips || []).map((t, i) => (
+                          <span key={i} className="px-2.5 py-1 bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg text-xs font-bold">
+                            {t.time}
+                          </span>
+                        ))
+                      ) : (
+                        <span className="text-[11px] text-zinc-500">Yaklaşan sefer bulunamadı.</span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <h4 className="text-xs font-bold text-zinc-300 mb-2 border-b border-zinc-800 pb-1 flex items-center gap-1.5">
+                      <Calendar className="w-3 h-3 text-brand-400" /> Tüm Seferler (Bugün)
+                    </h4>
+                    <div className="grid grid-cols-4 gap-2">
+                      {(routeOverview?.schedule?.allTrips || []).map((t, i) => (
+                        <span key={i} className="px-2 py-1 bg-zinc-800/80 border border-zinc-700 text-zinc-300 rounded text-center text-xs font-mono">
+                          {t.time}
                         </span>
-                        <span className="text-[10px] text-amber-400 font-medium">
-                          {trip.diffText}
-                        </span>
-                      </div>
-                    ))}
+                      ))}
+                    </div>
                   </div>
                 </div>
               )}
-
-              {/* Günlük Tüm Seferler Listesi */}
-              <div className="space-y-2">
-                <span className="text-xs font-bold text-slate-300">
-                  Tüm Günlük Sefer Çizelgesi ({routeOverview?.schedule?.allTrips?.length || 0} Sefer)
-                </span>
-
-                <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
-                  {(routeOverview?.schedule?.allTrips || []).map((trip, idx) => (
-                    <div
-                      key={idx}
-                      className="p-2 rounded-lg bg-slate-800/60 border border-slate-700/50 text-center font-mono font-bold text-sm text-slate-200"
-                    >
-                      {trip.time}
-                    </div>
-                  ))}
-                </div>
-              </div>
-
             </div>
-
-            <div className="px-6 py-3 border-t border-slate-800 bg-slate-800/30 text-right">
-              <button
-                onClick={() => setShowScheduleModal(false)}
-                className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold"
-              >
-                Kapat
-              </button>
-            </div>
-
           </div>
         </div>
       )}
 
       {/* MODAL 2: Ücret Tarifesi */}
       {showPriceModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm">
-          <div className="relative w-full max-w-md bg-slate-900 border border-slate-800 rounded-2xl shadow-2xl overflow-hidden">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
+          <div className="relative w-full max-w-sm bg-zinc-900 border border-zinc-800 rounded-2xl shadow-2xl overflow-hidden flex flex-col">
             
-            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-800 bg-slate-800/50">
+            <div className="flex items-center justify-between px-6 py-4 border-b border-zinc-800 bg-zinc-800/50">
               <div className="flex items-center gap-2">
-                <Coins className="w-5 h-5 text-emerald-400" />
-                <h3 className="font-bold text-white text-base">
-                  {selectedRouteCode} Ücret Tarifesi
-                </h3>
+                <Coins className="w-5 h-5 text-amber-500" />
+                <h3 className="font-bold text-white text-base">Ücret Tarifesi</h3>
               </div>
-              <button
-                onClick={() => setShowPriceModal(false)}
-                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-700/50"
-              >
-                ✕
+              <button onClick={() => setShowPriceModal(false)} className="p-1.5 rounded-lg text-zinc-400 hover:text-white hover:bg-zinc-700/50 transition">
+                <X className="w-5 h-5" />
               </button>
             </div>
 
             <div className="p-6 space-y-3">
-              {(routeOverview?.prices || []).map((p, idx) => (
-                <div
-                  key={idx}
-                  className="flex items-center justify-between p-3.5 rounded-xl bg-slate-800/70 border border-slate-700/60 shadow-sm"
-                >
-                  <div>
-                    <span className="font-bold text-sm text-white block">{p.cardType}</span>
-                    <span className="text-xs text-slate-400">Belediye Toplu Taşıma Tarifesi</span>
-                  </div>
-                  <span className="font-extrabold text-lg text-emerald-400 font-mono">
-                    {p.price.toFixed(2)} ₺
+              {(routeOverview?.prices || []).map((p, i) => (
+                <div key={i} className="flex items-center justify-between p-3 rounded-xl bg-zinc-800/50 border border-zinc-700/50">
+                  <span className="font-bold text-sm text-zinc-200">{p.tip}</span>
+                  <span className="font-mono font-extrabold text-lg text-amber-400">
+                    {p.fiyat.toFixed(2)} ₺
                   </span>
                 </div>
               ))}
             </div>
-
-            <div className="px-6 py-3 border-t border-slate-800 bg-slate-800/30 text-right">
-              <button
-                onClick={() => setShowPriceModal(false)}
-                className="px-4 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-white text-xs font-semibold"
-              >
-                Kapat
-              </button>
-            </div>
-
           </div>
         </div>
       )}

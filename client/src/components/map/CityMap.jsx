@@ -1,5 +1,19 @@
 import React, { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
+import { 
+  Map, 
+  Satellite, 
+  Trash2, 
+  Focus,
+  Info,
+  MapPin,
+  Bus,
+  ShieldAlert,
+  Navigation,
+  Clock,
+  Gauge
+} from 'lucide-react';
+import { createRoot } from 'react-dom/client';
 
 // Elazığ Varsayılan Merkez ve Zoom
 const DEFAULT_CENTER = [38.6748, 39.2225];
@@ -121,9 +135,9 @@ export default function CityMap({
         className: 'user-location-marker',
         html: `
           <div class="relative flex items-center justify-center w-9 h-9">
-            <span class="absolute inline-flex w-full h-full rounded-full bg-amber-400 opacity-60 animate-ping"></span>
-            <div class="relative w-6 h-6 bg-amber-500 rounded-full border-2 border-white shadow-2xl flex items-center justify-center text-xs">
-              📍
+            <span class="absolute inline-flex w-full h-full rounded-full bg-amber-500 opacity-60 animate-ping"></span>
+            <div class="relative w-6 h-6 bg-amber-600 rounded-full border-2 border-white shadow-2xl flex items-center justify-center">
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-map-pin"><path d="M20 10c0 4.993-5.539 10.193-7.399 11.799a1 1 0 0 1-1.202 0C9.539 20.193 4 14.993 4 10a8 8 0 0 1 16 0"/><circle cx="12" cy="10" r="3"/></svg>
             </div>
           </div>
         `,
@@ -134,12 +148,12 @@ export default function CityMap({
       const marker = L.marker([lat, lng], { icon: userIcon }).addTo(userLayer);
       
       marker.bindPopup(`
-        <div class="p-3 text-slate-100 bg-slate-900 rounded-xl space-y-1.5 min-w-[200px]">
-          <div class="flex items-center gap-1 text-xs text-amber-400 font-bold">
-            <span>📍 ${title || 'Seçilen Konum'}</span>
+        <div class="p-3 text-zinc-100 bg-zinc-900 rounded-xl space-y-1.5 min-w-[200px]">
+          <div class="flex items-center gap-1 text-xs text-amber-500 font-bold">
+            <span>Seçilen Konum</span>
           </div>
-          ${subtitle ? `<div class="text-xs text-slate-300">${subtitle}</div>` : ''}
-          <div class="text-[10px] text-slate-400 font-mono">
+          ${subtitle ? `<div class="text-xs text-zinc-300">${subtitle}</div>` : ''}
+          <div class="text-[10px] text-zinc-400 font-mono">
             Koordinat: ${lat.toFixed(5)}, ${lng.toFixed(5)}
           </div>
         </div>
@@ -164,10 +178,10 @@ export default function CityMap({
       const rings = identifiedData.yapi?.geometryRings || identifiedData.kadastro?.geometryRings;
       if (rings && rings.length > 0) {
         L.polygon(rings, {
-          color: '#f59e0b',
+          color: '#d97706',
           weight: 3,
           opacity: 0.9,
-          fillColor: '#f59e0b',
+          fillColor: '#d97706',
           fillOpacity: 0.35,
           dashArray: '4, 4'
         }).addTo(hlLayer);
@@ -196,8 +210,8 @@ export default function CityMap({
         className: 'custom-station-marker',
         html: `
           <div class="relative group cursor-pointer transition-transform duration-200 ${isSelected ? 'scale-125 z-30' : 'hover:scale-110'}">
-            <div class="w-5 h-5 rounded-full ${isSelected ? 'bg-amber-500 ring-4 ring-amber-400/40' : 'bg-slate-700/90 hover:bg-brand-500'} border-2 border-white shadow-md flex items-center justify-center text-[9px] font-bold text-white transition-colors">
-              🚏
+            <div class="w-5 h-5 rounded-full ${isSelected ? 'bg-amber-600 ring-4 ring-amber-500/40' : 'bg-zinc-800/90 hover:bg-brand-600'} border-2 border-white shadow-md flex items-center justify-center text-white transition-colors">
+              <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="3"/></svg>
             </div>
           </div>
         `,
@@ -213,9 +227,9 @@ export default function CityMap({
       });
 
       marker.bindPopup(`
-        <div class="p-3 max-w-xs text-slate-100 bg-slate-900 rounded-xl">
-          <div class="flex items-center gap-1.5 text-xs text-amber-400 font-bold mb-1">
-            <span>🚏 Durak No: ${st.stationId}</span>
+        <div class="p-3 max-w-xs text-zinc-100 bg-zinc-900 rounded-xl">
+          <div class="flex items-center gap-1.5 text-xs text-amber-500 font-bold mb-1">
+            <span>Durak No: ${st.stationId}</span>
           </div>
           <div class="text-sm font-semibold text-white mb-2 leading-snug">
             ${st.description}
@@ -269,15 +283,15 @@ export default function CityMap({
           <div class="relative cursor-pointer transition-transform duration-300 ${isSelected ? 'scale-125 z-40' : 'hover:scale-110'}">
             <div class="pulsing-ring" style="color: ${bgColor};"></div>
 
-            <div class="relative flex items-center justify-center w-8 h-8 rounded-full shadow-2xl border-2 border-white text-white font-bold text-xs" style="background-color: ${bgColor};">
-              <span class="text-sm">🚌</span>
+            <div class="relative flex items-center justify-center w-8 h-8 rounded-full shadow-2xl border-2 border-white text-white font-bold" style="background-color: ${bgColor};">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 6v6"/><path d="M15 6v6"/><path d="M2 12h19.6"/><path d="M18 18h3s.5-1.7.8-2.8c.1-.4.2-.8.2-1.2 0-.4-.1-.8-.2-1.2l-1.4-5C20.1 6.8 19.1 6 18 6H4a2 2 0 0 0-2 2v10h3"/><circle cx="7" cy="18" r="2"/><path d="M9 18h5"/><circle cx="16" cy="18" r="2"/></svg>
 
               <div class="absolute -top-1.5 left-1/2 -translate-x-1/2" style="transform: rotate(${rotation}deg); transform-origin: 50% 16px;">
                 <div class="w-0 h-0 border-l-[4px] border-l-transparent border-r-[4px] border-r-transparent border-b-[6px] border-b-white drop-shadow-sm"></div>
               </div>
             </div>
 
-            <div class="absolute -bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 rounded bg-slate-950/90 text-white font-mono text-[9px] font-bold border border-slate-700 shadow-md">
+            <div class="absolute -bottom-4 left-1/2 -translate-x-1/2 whitespace-nowrap px-1.5 py-0.5 rounded bg-zinc-950/90 text-white font-mono text-[9px] font-bold border border-zinc-700 shadow-md">
               ${bus.hiz} km/s
             </div>
           </div>
@@ -294,8 +308,8 @@ export default function CityMap({
       });
 
       marker.bindPopup(`
-        <div class="p-3 text-slate-100 bg-slate-900 rounded-xl space-y-2 min-w-[220px]">
-          <div class="flex items-center justify-between border-b border-slate-800 pb-1.5">
+        <div class="p-3 text-zinc-100 bg-zinc-900 rounded-xl space-y-2 min-w-[220px]">
+          <div class="flex items-center justify-between border-b border-zinc-800 pb-1.5">
             <span class="text-xs font-bold text-brand-400">${bus.hatkodu}</span>
             <span class="px-1.5 py-0.5 rounded text-[10px] font-semibold" style="background-color: ${bgColor}30; color: ${bgColor}; border: 1px solid ${bgColor}60;">
               ${bus.statusText}
@@ -304,26 +318,26 @@ export default function CityMap({
 
           <div class="space-y-1 text-xs">
             <div class="flex justify-between">
-              <span class="text-slate-400">Plaka:</span>
+              <span class="text-zinc-400">Plaka:</span>
               <span class="font-bold text-white font-mono">${bus.plaka}</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-slate-400">Hız / Maks:</span>
-              <span class="font-semibold text-slate-200">${bus.hiz} / ${bus.maxHiz} km/s</span>
+              <span class="text-zinc-400">Hız / Maks:</span>
+              <span class="font-semibold text-zinc-200">${bus.hiz} / ${bus.maxHiz} km/s</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-slate-400">Sürücü:</span>
-              <span class="font-semibold text-slate-200">${bus.surucu}</span>
+              <span class="text-zinc-400">Sürücü:</span>
+              <span class="font-semibold text-zinc-200">${bus.surucu}</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-slate-400">Sefer Yolcu:</span>
-              <span class="font-semibold text-slate-200">${bus.seferYolcu} kişi (Günlük: ${bus.gunlukYolcu})</span>
+              <span class="text-zinc-400">Sefer Yolcu:</span>
+              <span class="font-semibold text-zinc-200">${bus.seferYolcu} kişi (Günlük: ${bus.gunlukYolcu})</span>
             </div>
             <div class="flex justify-between">
-              <span class="text-slate-400">İstikamet:</span>
-              <span class="font-semibold text-slate-200">${bus.istikamet === 'G' ? 'Gidiş' : 'Dönüş'}</span>
+              <span class="text-zinc-400">İstikamet:</span>
+              <span class="font-semibold text-zinc-200">${bus.istikamet === 'G' ? 'Gidiş' : 'Dönüş'}</span>
             </div>
-            <div class="flex justify-between text-[10px] text-slate-500 pt-1 border-t border-slate-800">
+            <div class="flex justify-between text-[10px] text-zinc-500 pt-1 border-t border-zinc-800">
               <span>Güncellenme:</span>
               <span>${bus.editDate ? bus.editDate.split('T')[1]?.slice(0, 8) : '-'}</span>
             </div>
@@ -390,8 +404,8 @@ export default function CityMap({
         className: 'custom-emergency-marker',
         html: `
           <div class="relative cursor-pointer transition-transform duration-200 ${isSelected ? 'scale-125 z-40' : 'hover:scale-110'}">
-            <div class="w-7 h-7 rounded-xl ${isSelected ? 'bg-rose-500 ring-4 ring-rose-400/40' : 'bg-rose-600 hover:bg-rose-500'} border-2 border-white shadow-xl flex items-center justify-center text-sm shadow-rose-900/50">
-              🚨
+            <div class="w-7 h-7 rounded-xl ${isSelected ? 'bg-rose-500 ring-4 ring-rose-400/40' : 'bg-rose-700 hover:bg-rose-600'} border-2 border-white shadow-xl flex items-center justify-center text-sm shadow-rose-900/50">
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
             </div>
           </div>
         `,
@@ -407,33 +421,33 @@ export default function CityMap({
       });
 
       marker.bindPopup(`
-        <div class="p-3 text-slate-100 bg-slate-900 rounded-xl space-y-2 max-w-xs">
-          <div class="flex items-center gap-1.5 text-xs text-rose-400 font-bold">
-            <span>🚨 Acil Toplanma Alanı (#${area.siraNo})</span>
+        <div class="p-3 text-zinc-100 bg-zinc-900 rounded-xl space-y-2 max-w-xs">
+          <div class="flex items-center gap-1.5 text-xs text-rose-500 font-bold">
+            <span>Acil Toplanma Alanı (#${area.siraNo})</span>
           </div>
           <div class="text-sm font-bold text-white">
             ${area.parkAdi || area.mevkii}
           </div>
-          <div class="text-xs text-slate-300">
-            📍 ${area.mahalle} Mah. ${area.mevkii ? `— ${area.mevkii}` : ''}
+          <div class="text-xs text-zinc-300">
+            ${area.mahalle} Mah. ${area.mevkii ? `— ${area.mevkii}` : ''}
           </div>
 
-          <div class="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-slate-800 text-[11px]">
+          <div class="grid grid-cols-2 gap-1.5 pt-1.5 border-t border-zinc-800 text-[11px]">
             <div class="flex items-center gap-1">
-              <span>📏 Alan:</span>
+              <span class="text-zinc-500">Alan:</span>
               <span class="font-semibold text-white">${area.alanM2 ? `${Number(area.alanM2).toLocaleString('tr-TR')} m²` : '-'}</span>
             </div>
             <div class="flex items-center gap-1">
-              <span>♿ Engelli:</span>
-              <span class="font-semibold ${area.engelliUygun ? 'text-emerald-400' : 'text-slate-400'}">${area.engelliUygun ? 'Uygun' : '-'}</span>
+              <span class="text-zinc-500">Engelli:</span>
+              <span class="font-semibold ${area.engelliUygun ? 'text-emerald-400' : 'text-zinc-400'}">${area.engelliUygun ? 'Uygun' : '-'}</span>
             </div>
             <div class="flex items-center gap-1">
-              <span>💧 Su:</span>
-              <span class="font-semibold ${area.su ? 'text-emerald-400' : 'text-slate-400'}">${area.su ? 'Var' : '-'}</span>
+              <span class="text-zinc-500">Su:</span>
+              <span class="font-semibold ${area.su ? 'text-emerald-400' : 'text-zinc-400'}">${area.su ? 'Var' : '-'}</span>
             </div>
             <div class="flex items-center gap-1">
-              <span>🚻 WC:</span>
-              <span class="font-semibold ${area.wc ? 'text-emerald-400' : 'text-slate-400'}">${area.wc ? 'Var' : '-'}</span>
+              <span class="text-zinc-500">WC:</span>
+              <span class="font-semibold ${area.wc ? 'text-emerald-400' : 'text-zinc-400'}">${area.wc ? 'Var' : '-'}</span>
             </div>
           </div>
         </div>
@@ -465,15 +479,15 @@ export default function CityMap({
       const isSelected = selectedNeighborhood?.objectid === nh.objectid;
 
       const polygon = L.polygon(nh.geometryRings, {
-        color: isSelected ? '#38bdf8' : '#64748b',
+        color: isSelected ? '#38bdf8' : '#71717a',
         weight: isSelected ? 3 : 1.5,
         opacity: isSelected ? 1 : 0.6,
-        fillColor: isSelected ? '#0284c7' : '#334155',
+        fillColor: isSelected ? '#0284c7' : '#3f3f46',
         fillOpacity: isSelected ? 0.25 : 0.08,
       });
 
       polygon.bindTooltip(`
-        <div class="text-xs font-bold p-1 text-slate-900">
+        <div class="text-xs font-bold p-1 text-zinc-900">
           ${nh.ad} Mahallesi
         </div>
       `, { sticky: true });
@@ -499,7 +513,7 @@ export default function CityMap({
   };
 
   return (
-    <div className="relative w-full h-full overflow-hidden rounded-2xl border border-slate-800 shadow-2xl bg-slate-950">
+    <div className="relative w-full h-full overflow-hidden rounded-2xl border border-zinc-800 shadow-2xl bg-zinc-950">
       <div ref={mapContainerRef} className="w-full h-full z-10" />
 
       {/* Harita Hızlı Butonları (Sağ Üst) */}
@@ -507,17 +521,18 @@ export default function CityMap({
         <button
           onClick={toggleMapType}
           title={mapType === 'osm' ? 'Uydu Haritasına Geç' : 'Standart Haritaya Geç'}
-          className="p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700 shadow-lg backdrop-blur transition flex items-center gap-1.5 text-xs font-bold"
+          className="p-2.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-zinc-700 shadow-lg backdrop-blur transition flex items-center gap-1.5 text-xs font-bold"
         >
-          <span>{mapType === 'osm' ? '🛰️ Uydu' : '🗺️ Harita'}</span>
+          {mapType === 'osm' ? <Satellite className="w-4 h-4" /> : <Map className="w-4 h-4" />}
+          <span>{mapType === 'osm' ? 'Uydu' : 'Harita'}</span>
         </button>
 
         <button
           onClick={handleClearAll}
           title="Tüm İşaretlemeleri Temizle ve Haritayı Sıfırla"
-          className="p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-amber-400 border border-slate-700 shadow-lg backdrop-blur transition flex items-center justify-center text-xs font-bold"
+          className="p-2.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-amber-500 border border-zinc-700 shadow-lg backdrop-blur transition flex items-center justify-center gap-1.5 text-xs font-bold"
         >
-          🧹 Temizle
+          <Trash2 className="w-4 h-4" /> Temizle
         </button>
 
         <button
@@ -527,15 +542,16 @@ export default function CityMap({
             }
           }}
           title="Merkeze Sıfırla"
-          className="p-2.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700 shadow-lg backdrop-blur transition text-center"
+          className="p-2.5 rounded-xl bg-zinc-900/90 hover:bg-zinc-800 text-zinc-200 border border-zinc-700 shadow-lg backdrop-blur transition flex justify-center items-center"
         >
-          🎯
+          <Focus className="w-4 h-4" />
         </button>
       </div>
 
       {/* Bilgilendirme Rozeti (Sol Alt) */}
-      <div className="absolute bottom-4 left-4 z-20 bg-slate-900/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-slate-700/60 text-[11px] text-slate-300 flex items-center gap-1.5 shadow-lg hidden sm:flex pointer-events-none">
-        <span>💡 Haritada herhangi bir noktaya tıklayarak bina, kadastro ve mahalle verilerini görebilirsiniz.</span>
+      <div className="absolute bottom-4 left-4 z-20 bg-zinc-900/80 backdrop-blur-md px-3 py-1.5 rounded-xl border border-zinc-700/60 text-[11px] text-zinc-300 flex items-center gap-1.5 shadow-lg hidden sm:flex pointer-events-none">
+        <Info className="w-3.5 h-3.5 text-amber-500" />
+        <span>Haritada herhangi bir noktaya tıklayarak bina, kadastro ve mahalle verilerini görebilirsiniz.</span>
       </div>
     </div>
   );

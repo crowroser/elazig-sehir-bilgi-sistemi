@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import Header from './components/common/Header';
 import StatusModal from './components/common/StatusModal';
+import AboutModal from './components/common/AboutModal';
+import CityStats from './components/common/CityStats';
 import CityMap from './components/map/CityMap';
 import BusTracker from './components/bus/BusTracker';
 import CbsExplorer from './components/cbs/CbsExplorer';
@@ -11,6 +13,7 @@ import { fetchHealthStatus, identifyLocation } from './services/api';
 export default function App() {
   const [activeTab, setActiveTab] = useState('bus'); // 'bus', 'cbs', 'emergency'
   const [showStatusModal, setShowStatusModal] = useState(false);
+  const [showAboutModal, setShowAboutModal] = useState(false);
   const [healthData, setHealthData] = useState(null);
   const [loadingHealth, setLoadingHealth] = useState(false);
 
@@ -103,18 +106,26 @@ export default function App() {
   };
 
   return (
-    <div className="flex flex-col h-screen w-screen overflow-hidden bg-slate-950 text-slate-100">
+    <div className="flex flex-col h-screen w-screen overflow-hidden bg-zinc-950 text-zinc-100">
       
       {/* 1. Üst Menü Çubuğu */}
       <Header
         activeTab={activeTab}
         setActiveTab={handleTabChange}
         onOpenStatus={() => setShowStatusModal(true)}
+        onOpenAbout={() => setShowAboutModal(true)}
         healthData={healthData}
       />
 
-      {/* 2. Ana Çalışma Alanı (Split Screen: Sol Panel + Sağ Harita) */}
-      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden p-2 sm:p-4 gap-3 sm:gap-4">
+      {/* 2. Kent İstatistikleri Çubuğu */}
+      <CityStats
+        stationCount={stations.length || 1286}
+        neighborhoodCount={neighborhoods.length || 45}
+        emergencyCount={emergencyAreas.length || 130}
+      />
+
+      {/* 3. Ana Çalışma Alanı (Split Screen: Sol Panel + Sağ Harita) */}
+      <main className="flex-1 flex flex-col lg:flex-row overflow-hidden p-2 sm:p-3 gap-2 sm:gap-3">
         
         {/* Sol Panel: Aktif Mod Kontrolü ve Listeler */}
         <section className="w-full lg:w-[480px] xl:w-[540px] h-[48%] lg:h-full flex flex-col overflow-y-auto shrink-0 transition-all duration-300">
@@ -149,7 +160,7 @@ export default function App() {
         </section>
 
         {/* Sağ Panel: İnteraktif Leaflet Haritası & CBS Tıklama Kartı */}
-        <section className="flex-1 h-[52%] lg:h-full rounded-2xl overflow-hidden shadow-2xl relative">
+        <section className="flex-1 h-[52%] lg:h-full rounded-2xl overflow-hidden shadow-elevated relative">
           <CityMap
             stations={stations}
             selectedStation={selectedStation}
@@ -182,13 +193,19 @@ export default function App() {
 
       </main>
 
-      {/* 3. Sistem Durum Modalı */}
+      {/* 4. Sistem Durum Modalı */}
       <StatusModal
         isOpen={showStatusModal}
         onClose={() => setShowStatusModal(false)}
         healthData={healthData}
         onRefresh={loadHealth}
         loading={loadingHealth}
+      />
+
+      {/* 5. Hakkında Modalı */}
+      <AboutModal
+        isOpen={showAboutModal}
+        onClose={() => setShowAboutModal(false)}
       />
 
     </div>
