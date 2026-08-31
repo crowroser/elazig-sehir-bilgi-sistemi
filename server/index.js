@@ -86,23 +86,33 @@ app.get('*', (req, res, next) => {
 });
 
 // Graceful shutdown
-const shutdown = (signal) => {
+const shutdown = (signal, srv) => {
   console.log(`\n[${signal}] Sunucu kapatılıyor...`);
-  server.close(() => {
-    console.log('Sunucu düzgün şekilde kapatıldı.');
+  if (srv) {
+    srv.close(() => {
+      console.log('Sunucu düzgün şekilde kapatıldı.');
+      process.exit(0);
+    });
+  } else {
     process.exit(0);
-  });
-  // Force close after 5s
+  }
   setTimeout(() => process.exit(1), 5000);
 };
 
-const server = app.listen(PORT, () => {
-  console.log(`───────────────────────────────────────────────`);
-  console.log(`  Elazığ Şehir Bilgi Sistemi v2.0.0`);
-  console.log(`  Port: http://localhost:${PORT}`);
-  console.log(`  API Docs: http://localhost:${PORT}/api-docs`);
-  console.log(`───────────────────────────────────────────────`);
-});
+// Sadece Vercel HARİCİ ortamlarda (Lokal, Render vb.) port dinle. 
+// Vercel, export edilen app'i kendi Serverless ortamında çalıştırır.
+if (!process.env.VERCEL) {
+  const server = app.listen(PORT, () => {
+    console.log(`───────────────────────────────────────────────`);
+    console.log(`🚀 [Server] Elazığ KBS Sunucusu Çalışıyor`);
+    console.log(`🌐 [Port]   ${PORT}`);
+    console.log(`📖 [Docs]   http://localhost:${PORT}/api-docs`);
+    console.log(`───────────────────────────────────────────────`);
+  });
 
-process.on('SIGTERM', () => shutdown('SIGTERM'));
-process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM', server));
+  process.on('SIGINT', () => shutdown('SIGINT', server));
+}
+
+// Vercel Serverless Functions için app'i dışarı aktar
+export default app;
