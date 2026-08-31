@@ -377,12 +377,13 @@ export async function identifyLocation(lat, lng) {
     }
 
     // 5. En Yakın Acil Toplanma Alanı
-    const nearestEmerg = (emergencySnapshot || [])
-      .map((e) => {
-        const dist = calculateDistanceMeters(Number(lat), Number(lng), e.latitude, e.longitude);
-        return { ...e, distanceMeters: dist, distanceText: formatDistance(dist) };
-      })
-      .sort((a, b) => a.distanceMeters - b.distanceMeters)[0];
+    // Fotoğrafları çek (Bina veya Numarataj)
+    if (yapi && yapi.objectid) {
+      yapi.photos = await fetchBuildingAttachmentsDirect(8, yapi.objectid).catch(() => []);
+    }
+    if (numarataj && numarataj.objectid) {
+      numarataj.photos = await fetchBuildingAttachmentsDirect(7, numarataj.objectid).catch(() => []);
+    }
 
     return {
       coordinates: { lat: Number(lat), lng: Number(lng) },
@@ -523,12 +524,35 @@ export async function searchBuilding({ objectid, mahalle, ada, parsel, limit = 1
 }
 export const searchBuildings = searchBuilding;
 
+export async function fetchBuildingAttachmentsDirect(layerId, objectId) {
+  if (!objectId) return [];
+  try {
+    const data = await fetchJsonp(`${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/${layerId}/queryAttachments`, {
+      objectIds: String(objectId),
+      returnMetadata: 'true'
+    });
+    const group = (data.attachmentGroups || [])[0];
+    if (!group || !group.attachmentInfos) return [];
+    return group.attachmentInfos.map((item) => ({
+      id: item.id,
+      name: item.name,
+      contentType: item.contentType || 'image/jpeg',
+      size: item.size,
+      url: `${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/${layerId}/${objectId}/attachments/${item.id}`,
+      thumbnailUrl: `${CBS_API_BASE}/server/rest/services/kentbilgisistemi/KBS_HALK/FeatureServer/${layerId}/${objectId}/attachments/${item.id}`
+    }));
+  } catch (err) {
+    console.warn('Fotoğraf çekilemedi:', err);
+    return [];
+  }
+}
+
 export async function fetchBuildingAttachments(objectId) {
   try {
     const res = await fetchJson(`/cbs/building/${objectId}/attachments`);
     return res.data || [];
   } catch {
-    return [];
+    return await fetchBuildingAttachmentsDirect(8, objectId);
   }
 }
 

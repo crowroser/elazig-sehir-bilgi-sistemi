@@ -506,6 +506,7 @@ export default function CbsExplorer({
                             <img
                               src={ph.url}
                               alt={ph.name}
+                              referrerPolicy="no-referrer"
                               className="w-full h-full object-cover group-hover:scale-105 transition"
                             />
                           </a>

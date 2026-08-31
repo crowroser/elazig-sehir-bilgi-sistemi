@@ -92,6 +92,7 @@ export default function IdentifyDrawer({ data, loading, onClose }) {
                         <img
                           src={photo.url}
                           alt={photo.name}
+                          referrerPolicy="no-referrer"
                           className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
                           loading="lazy"
                         />
@@ -353,6 +354,7 @@ export default function IdentifyDrawer({ data, loading, onClose }) {
               <img
                 src={selectedPhoto.url}
                 alt={selectedPhoto.name}
+                referrerPolicy="no-referrer"
                 className="max-h-[75vh] w-auto object-contain rounded-lg"
               />
             </div>
