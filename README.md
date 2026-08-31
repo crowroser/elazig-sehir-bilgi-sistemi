@@ -1,5 +1,3 @@
-<div align="center">
-
 # 🏙️ Elazığ Şehir Bilgi Sistemi (KBS & Canlı Otobüs Takip)
 
 **Elazığ Belediyesi'nin iki bağımsız kamu veri altyapısını tek bir modern, hızlı ve interaktif platformda birleştiren açık kaynak Kent Bilgi ve Canlı Toplu Taşıma Sistemi.**
@@ -13,9 +11,10 @@
 [![OpenAPI / Swagger](https://img.shields.io/badge/Swagger-OpenAPI%203.0-85EA2D?style=for-the-badge&logo=swagger&logoColor=black)](http://localhost:3001/api-docs)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg?style=for-the-badge)](LICENSE)
 
-[🌐 Canlı Demo: crowroser.github.io/elazig-sehir-bilgi-sistemi](https://crowroser.github.io/elazig-sehir-bilgi-sistemi/) • [✨ Özellikler](#-temel-özellikler) • [📚 API Dokümantasyonu (Swagger)](#-api-dokümantasyonu-ve-swagger-ui) • [🚀 Kurulum & Çalıştırma](#-hızlı-kurulum) • [🏗️ Mimari](#️-sistem-mimarisi)
+---
 
-</div>
+### 🌐 Canlı Demo Linki:
+👉 **[https://crowroser.github.io/elazig-sehir-bilgi-sistemi/](https://crowroser.github.io/elazig-sehir-bilgi-sistemi/)**
 
 ---
 
