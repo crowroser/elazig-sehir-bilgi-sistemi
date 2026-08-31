@@ -17,9 +17,6 @@ concurrency:
 
 jobs:
   build-and-deploy:
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     runs-on: ubuntu-latest
     steps:
       - name: Checkout Code
@@ -40,6 +37,15 @@ jobs:
       - name: Build Frontend for GitHub Pages
         run: npm run build --prefix client
 
+      # 1. gh-pages dalına doğrudan yükleme (Klasik Branch Dağıtımı için)
+      - name: Deploy to gh-pages branch
+        uses: JamesIves/github-pages-deploy-action@v4
+        with:
+          branch: gh-pages
+          folder: client/dist
+          clean: true
+
+      # 2. GitHub Pages Actions Dağıtımı
       - name: Setup Pages
         uses: actions/configure-pages@v5
         with:
