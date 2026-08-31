@@ -154,28 +154,7 @@ export async function fetchStationRemaining(stopId) {
     const res = await fetchJson(`/bus/station/${stopId}/remaining`);
     return res.data || [];
   } catch {
-    // BACKEND YOKSA (Vercel Static / GitHub Pages): CORS Proxy ile doğrudan Elazığkart API'sine git
-    try {
-      const raw = await fetch('https://corsproxy.io/?https://elazigkart.elazig.bel.tr/api/static/stationremainingtime', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ stopId: Number(stopId) })
-      }).then(r => r.json());
-      
-      return (raw || []).map((item) => ({
-        busLineCode: item.busLineCode || '',
-        busLineNo: item.busLineNo || 0,
-        busLineShortName: String(item.busLineShortName || item.busLineNo || ''),
-        panelId: Number(item.panelId),
-        remainingTimeCurr: item.remainingTimeCurr != null ? Number(item.remainingTimeCurr) : null,
-        remainingTimeNext: item.remainingTimeNext != null ? Number(item.remainingTimeNext) : null,
-        isAccordingToTimeSchedule: item.isAccordingToTimeSchedule || 'A',
-        busStatusCurr: item.busStatusCurr || 0,
-        busStatusNext: item.busStatusNext || 0
-      }));
-    } catch (e) {
-      return [];
-    }
+    return [];
   }
 }
 
@@ -234,61 +213,7 @@ export async function fetchRouteOverview(routeCode, direction = 'G') {
     const res = await fetchJson(`/bus/route/${encodeURIComponent(routeCode)}/overview?direction=${direction}`);
     return res.data || {};
   } catch {
-    // BACKEND YOKSA: CORS Proxy ile Hat Özetini topla
-    try {
-      const code = String(routeCode).trim();
-      const [busesRes, stopsRes] = await Promise.allSettled([
-        fetch('https://corsproxy.io/?https://elazigkart.elazig.bel.tr/api/static/realtimedata', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ routeCode: code })
-        }).then(r => r.json()),
-        fetch('https://corsproxy.io/?https://elazigkart.elazig.bel.tr/api/static/busstopdetailsbyroute', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ routeCode: code, direction: direction })
-        }).then(r => r.json())
-      ]);
-
-      const rawBuses = busesRes.status === 'fulfilled' ? busesRes.value : [];
-      const rawStops = stopsRes.status === 'fulfilled' ? stopsRes.value : [];
-
-      const mappedBuses = (rawBuses || []).map(item => {
-        const hexColor = (item.renk || '00FF00').toUpperCase().replace('#', '');
-        return {
-          plaka: (item.plaka || '').trim(),
-          latitude: Number(item.enlem),
-          longitude: Number(item.boylam),
-          renk: `#${hexColor}`,
-          statusText: hexColor === 'FFFF00' ? 'Duraklamış' : hexColor === 'FF0000' ? 'Uyarı' : 'Hareket Halinde',
-          hiz: Number(item.hiz) || 0,
-          seferYolcu: Number(item.seferYolcu) || 0,
-          yon: Number(item.yon) || 0,
-          surucu: (item.surucu || 'Bilinmiyor').trim(),
-          klimaVarMi: Number(item.klimaVarMi) === 1,
-          engelliUygunMu: Number(item.engelliUygunMu) === 1
-        };
-      });
-
-      const mappedStops = (rawStops || []).map(item => ({
-        durakId: Number(item.busStopId),
-        durakAdi: (item.busStopName || '').trim(),
-        sira: Number(item.sequenceNumber) || 0
-      }));
-
-      return {
-        buses: mappedBuses,
-        routeStops: mappedStops,
-        prices: [
-          { tip: 'TAM', fiyat: 15.0 },
-          { tip: 'İNDİRİMLİ', fiyat: 11.0 }
-        ],
-        schedule: { nextTrips: [], allTrips: [] },
-        coordinates: { forward: [], backward: [] }
-      };
-    } catch (e) {
-      return {};
-    }
+    return {};
   }
 }
 
